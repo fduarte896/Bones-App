@@ -65,6 +65,9 @@ class Medication: BasicEvent {
     var dosage: String
     var frequency: String
 
+    // Foto de la prescripción
+    @Attribute(.externalStorage) var prescriptionImageData: Data?
+
     var completedAt: Date?
     
     init(date: Date,
@@ -72,13 +75,15 @@ class Medication: BasicEvent {
          name: String,
          dosage: String,
          frequency: String,
-         notes: String? = nil) {
+         notes: String? = nil,
+         prescriptionImageData: Data? = nil) {
         self.date = date
         self.pet = pet
         self.name = name
         self.dosage = dosage
         self.frequency = frequency
         self.notes = notes
+        self.prescriptionImageData = prescriptionImageData
     }
 }
 
@@ -98,18 +103,23 @@ class Vaccine: BasicEvent {
     var vaccineName: String
     var manufacturer: String?
 
+    // Foto de la prescripción
+    @Attribute(.externalStorage) var prescriptionImageData: Data?
+
     var completedAt: Date?
     
     init(date: Date,
          pet: Pet,
          vaccineName: String,
          manufacturer: String? = nil,
-         notes: String? = nil) {
+         notes: String? = nil,
+         prescriptionImageData: Data? = nil) {
         self.date = date
         self.pet = pet
         self.vaccineName = vaccineName
         self.manufacturer = manufacturer
         self.notes = notes
+        self.prescriptionImageData = prescriptionImageData
     }
 }
 
@@ -125,12 +135,19 @@ class Deworming: BasicEvent {
     var rrule: String?
     var pet: Pet?
 
+    // Foto de la prescripción
+    @Attribute(.externalStorage) var prescriptionImageData: Data?
+
     var completedAt: Date?
     
-    init(date: Date, pet: Pet, notes: String? = nil) {
+    init(date: Date,
+         pet: Pet,
+         notes: String? = nil,
+         prescriptionImageData: Data? = nil) {
         self.date = date
         self.pet = pet
         self.notes = notes
+        self.prescriptionImageData = prescriptionImageData
     }
 }
 

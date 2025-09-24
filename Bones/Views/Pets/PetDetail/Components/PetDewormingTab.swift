@@ -64,3 +64,84 @@ private struct DewormingRow: View {
         }
     }
 }
+
+
+// MARK: - Previews
+
+#Preview("PetDewormingTab – Con datos") {
+    // 1) Contenedor en memoria con el esquema necesario
+    let container = PreviewData.makeContainer()
+    // 2) Insertamos una mascota y varias desparasitaciones
+    let pet = PreviewData.seedDewormings(in: container)
+    // 3) ViewModel real configurado con el mismo context
+    let vm = PetDetailViewModel(petID: pet.id)
+    vm.inject(context: ModelContext(container))
+    vm.fetchEvents()
+    // 4) Vista con el mismo container en el entorno
+    return PetDewormingTab(viewModel: vm)
+        .modelContainer(container)
+}
+
+#Preview("PetDewormingTab – Vacío") {
+    let container = PreviewData.makeContainer()
+    // Solo la mascota, sin eventos
+    let ctx = ModelContext(container)
+    let pet = Pet(name: "Mishi", species: .gato, sex: .female)
+    ctx.insert(pet)
+    try? ctx.save()
+    
+    let vm = PetDetailViewModel(petID: pet.id)
+    vm.inject(context: ctx)
+    vm.fetchEvents()
+    
+    return PetDewormingTab(viewModel: vm)
+        .modelContainer(container)
+}
+
+// Datos de ejemplo para este preview
+private enum PreviewData {
+    static func makeContainer() -> ModelContainer {
+        let schema = Schema([
+            Pet.self,
+            Medication.self,
+            Vaccine.self,
+            Deworming.self,
+            Grooming.self,
+            WeightEntry.self
+        ])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try! ModelContainer(for: schema, configurations: config)
+    }
+    
+    @discardableResult
+    static func seedDewormings(in container: ModelContainer) -> Pet {
+        let ctx = ModelContext(container)
+        
+        let loki = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
+        ctx.insert(loki)
+        
+        let now = Date()
+        let cal = Calendar.current
+        
+        let lastMonth = cal.date(byAdding: .month, value: -1, to: now)!
+        let twoWeeksAgo = cal.date(byAdding: .day, value: -14, to: now)!
+        let nextMonth = cal.date(byAdding: .month, value: 1, to: now)!
+        
+        let dew1 = Deworming(date: lastMonth, pet: loki, notes: "Tableta mensual")
+        dew1.isCompleted = true
+        dew1.completedAt = lastMonth
+        
+        let dew2 = Deworming(date: twoWeeksAgo, pet: loki, notes: "Pipeta")
+        dew2.isCompleted = true
+        dew2.completedAt = now
+        
+        let dew3 = Deworming(date: nextMonth, pet: loki, notes: "Recordatorio próximo")
+        
+        ctx.insert(dew1)
+        ctx.insert(dew2)
+        ctx.insert(dew3)
+        
+        try? ctx.save()
+        return loki
+    }
+}

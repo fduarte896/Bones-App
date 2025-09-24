@@ -108,13 +108,32 @@ struct PetDetailView: View {
 
             
             // ---------- Picker de tabs ----------
-            Picker("Sección", selection: $selectedTab) {
-                ForEach(DetailTab.allCases, id: \.self) { tab in
-                    Text(tab.title).tag(tab)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(DetailTab.allCases, id: \.self) { tab in
+                        Button {
+                            selectedTab = tab
+                        } label: {
+                            Text(tab.title)
+                                .font(.subheadline)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 12)
+                                .background(
+                                    Capsule()
+                                        .fill(selectedTab == tab
+                                              ? Color.accentColor
+                                              : Color(.systemGray5))
+                                )
+                                .foregroundStyle(selectedTab == tab ? .white : .primary)
+                        }
+                        .buttonStyle(.plain)          // elimina animación toc
+                    }
                 }
+                .padding(.horizontal)                // margen lateral
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
+            .padding(.bottom, 6)                      // separación con el contenido
+
             
             // ---------- Contenido ----------
             Group {
@@ -159,16 +178,23 @@ struct PetDetailView: View {
         .navigationTitle(pet.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
-                    Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
-                    Divider()
-                    // Botón + existente
-                    Button { showingQuickAdd = true } label: {
-                        Label("Nuevo evento", systemImage: "plus")
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }
+            ToolbarItem(placement: .automatic) {
+//                Menu {
+//                    Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
+//                    Divider()
+//                    // Botón + existente
+//                    Button { showingQuickAdd = true } label: {
+//                        Label("Nuevo evento", systemImage: "plus")
+//                    }
+//                } label: { Image(systemName: "ellipsis.circle") }
+                Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
             }
+            ToolbarItem(placement: .automatic) {
+                                    Button { showingQuickAdd = true } label: {
+                                        Label("Nuevo evento", systemImage: "plus")
+                                    }
+            }
+            
 
         }
         .sheet(isPresented: $showingQuickAdd, onDismiss: {
@@ -241,7 +267,7 @@ private func ageString(for birth: Date?) -> String? {
     // 1. Creamos una instancia de Pet con datos de ejemplo
     let samplePet = Pet(
         name: "Loki",
-        species: .dog,
+        species: .perro,
         breed: "Husky",
         birthDate: Calendar.current.date(from: DateComponents(year: 2021, month: 3, day: 14)),
         sex: .male,

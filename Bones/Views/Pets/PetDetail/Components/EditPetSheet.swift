@@ -57,8 +57,8 @@ struct EditPetSheet: View {
                         .autocorrectionDisabled()
                     
                     Picker("Especie", selection: $pet.species) {
-                        Text("Perro").tag(Species.dog)
-                        Text("Gato").tag(Species.cat)
+                        Text("Perro").tag(Species.perro)
+                        Text("Gato").tag(Species.gato)
                     }
                     Picker("Sexo", selection: $pet.sex) {
                         Text("Macho").tag(Sex.male)
@@ -106,5 +106,43 @@ extension Binding {
             get: { source.wrappedValue ?? defaultValue },
             set: { source.wrappedValue = $0 }
         )
+    }
+}
+
+// MARK: - Preview
+
+#Preview("EditPetSheet – Demo") {
+    EditPetSheetPreviewHost()
+        .modelContainer(for: Pet.self, inMemory: true)
+}
+
+private struct EditPetSheetPreviewHost: View {
+    @Environment(\.modelContext) private var context
+    @State private var pet: Pet = {
+        let p = Pet(
+            name: "Loki",
+            species: .perro,
+            breed: "Husky",
+            birthDate: Calendar.current.date(from: DateComponents(year: 2021, month: 3, day: 14)),
+            sex: .male,
+            color: "Blanco"
+        )
+        // Imagen de ejemplo opcional
+        if let img = UIImage(systemName: "pawprint.fill")?.withRenderingMode(.alwaysOriginal),
+           let data = img.pngData() {
+            p.photoData = data
+        }
+        return p
+    }()
+    @State private var didInsert = false
+    
+    var body: some View {
+        EditPetSheet(pet: pet)
+            .onAppear {
+                if !didInsert {
+                    context.insert(pet)
+                    didInsert = true
+                }
+            }
     }
 }

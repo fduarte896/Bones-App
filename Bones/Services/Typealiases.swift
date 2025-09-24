@@ -6,3 +6,6 @@
 //
 
 import Foundation
+import SwiftData
+
+typealias Pred<T> = T where T: BasicEvent & PersistentModel

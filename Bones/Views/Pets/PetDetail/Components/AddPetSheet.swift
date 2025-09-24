@@ -14,7 +14,7 @@ struct AddPetSheet: View {
     
     // MARK: – Estado del formulario
     @State private var name = ""
-    @State private var species: Species = .dog        // enum existente (.dog / .cat)
+    @State private var species: Species = .perro        // enum existente (.dog / .cat)
     @State private var sex: Sex = .male               // enum (.male / .female)
     @State private var birthDate = Date()                // se ajustará con DatePicker
     @State private var breed = ""
@@ -58,8 +58,8 @@ struct AddPetSheet: View {
                         .autocorrectionDisabled()
                     
                     Picker("Especie", selection: $species) {
-                        Text("Perro").tag(Species.dog)
-                        Text("Gato").tag(Species.cat)
+                        Text("Perro").tag(Species.perro)
+                        Text("Gato").tag(Species.gato)
                     }
                     Picker("Sexo", selection: $sex) {
                         Text("Macho").tag(Sex.male)
@@ -117,6 +117,7 @@ struct AddPetSheet: View {
 }
 
 
-//#Preview {
-//    AddPetSheet()
-//}
+#Preview("AddPetSheet – Directo") {
+    AddPetSheet()
+        .modelContainer(for: Pet.self, inMemory: true)
+}

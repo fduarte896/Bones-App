@@ -58,42 +58,38 @@ struct PetCardView: View {
     }
 }
 
+// MARK: - Previews
 
+#Preview("Con foto y evento") {
+    let sample = Pet(
+        name: "Loki",
+        species: .perro,
+        breed: "Husky",
+        birthDate: Calendar.current.date(from: DateComponents(year: 2021, month: 3, day: 14)),
+        sex: .male,
+        color: "Blanco"
+    )
+    // Imagen de ejemplo (SF Symbol convertido a PNG)
+    if let img = UIImage(systemName: "pawprint.fill")?.withRenderingMode(.alwaysOriginal),
+       let data = img.pngData() {
+        sample.photoData = data
+    }
+    return PetCardView(pet: sample, nextEventDate: .now.addingTimeInterval(86_400))
+        .previewLayout(.sizeThatFits)
+        .padding()
+}
 
-////  PetCardView_Previews.swift
-//import SwiftUI
-//
-//#Preview("Foto + evento") {
-//    let sample = Pet(
-//        name: "Loki",
-//        species: .dog,
-//        breed: "Husky",
-//        birthDate: Calendar.current.date(from: DateComponents(year: 2021, month: 3, day: 14)),
-//        sex: .male,
-//        color: "Blanco"
-//    )
-//    // Carga una imagen de ejemplo del sistema
-//    if let img = UIImage(systemName: "dog.fill")?.withRenderingMode(.alwaysOriginal),
-//       let data = img.pngData() {
-//        sample.photoData = data
-//    }
-//    PetCardView(pet: sample, nextEventDate: .now.addingTimeInterval(86_400))
-//        .previewLayout(.sizeThatFits)
-//        .padding()
-//}
-//
-//#Preview("Sin foto · sin evento · Dark") {
-//    let sample = Pet(
-//        name: "Mía",
-//        species: .cat,
-//        breed: "Criolla",
-//        birthDate: Calendar.current.date(from: DateComponents(year: 2020, month: 11, day: 2)),
-//        sex: .female,
-//        color: "Gris"
-//    )
-//    PetCardView(pet: sample, nextEvent: nil)
-//        .previewLayout(.sizeThatFits)
-//        .padding()
-//        .environment(\.colorScheme, .dark)
-//}
-//
+#Preview("Sin foto · sin evento · Dark") {
+    let sample = Pet(
+        name: "Mía",
+        species: .gato,
+        breed: "Común",
+        birthDate: Calendar.current.date(from: DateComponents(year: 2020, month: 11, day: 2)),
+        sex: .female,
+        color: "Gris"
+    )
+    return PetCardView(pet: sample, nextEventDate: nil)
+        .previewLayout(.sizeThatFits)
+        .padding()
+        .environment(\.colorScheme, .dark)
+}

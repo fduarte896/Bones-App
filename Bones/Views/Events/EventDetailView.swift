@@ -3,14 +3,13 @@
 
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct EventDetailView: View {
     let event: any BasicEvent
     
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    
-    @State private var isEditing = false
     
     // Borrado en serie
     @State private var pendingFutureCount = 0
@@ -20,23 +19,23 @@ struct EventDetailView: View {
         Group {
             switch event {
             case let med as Medication:
-                MedicationDetailView(med: med, isEditing: $isEditing) {
+                MedicationDetailView(med: med) {
                     startDelete(for: med)
                 }
             case let vac as Vaccine:
-                VaccineDetailView(vac: vac, isEditing: $isEditing) {
+                VaccineDetailView(vac: vac) {
                     startDelete(for: vac)
                 }
             case let dew as Deworming:
-                DewormingDetailView(dew: dew, isEditing: $isEditing) {
+                DewormingDetailView(dew: dew) {
                     startDelete(for: dew)
                 }
             case let groom as Grooming:
-                GroomingDetailView(groom: groom, isEditing: $isEditing) {
+                GroomingDetailView(groom: groom) {
                     deleteSingle(event: groom)
                 }
             case let weight as WeightEntry:
-                WeightEntryDetailView(weight: weight, isEditing: $isEditing) {
+                WeightEntryDetailView(weight: weight) {
                     deleteSingle(event: weight)
                 }
             default:
@@ -49,12 +48,6 @@ struct EventDetailView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(event.isCompleted ? "Desmarcar" : "Completar") {
                     toggleCompleted()
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(isEditing ? "Guardar" : "Editar") {
-                    if isEditing { saveAndReschedule() }
-                    isEditing.toggle()
                 }
             }
         }
@@ -93,18 +86,6 @@ private extension EventDetailView {
         event.isCompleted.toggle()
         event.completedAt = event.isCompleted ? Date() : nil
         NotificationManager.shared.cancelNotification(id: event.id)
-        try? context.save()
-        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
-    }
-    
-    func saveAndReschedule() {
-        // Reprograma la notificación para la fecha actual del evento
-        NotificationManager.shared.cancelNotification(id: event.id)
-        let title = event.displayType.isEmpty ? "Evento" : event.displayType
-        let body = "\(event.pet?.name ?? "") – \(event.displayName)"
-        NotificationManager.shared.scheduleNotification(
-            id: event.id, title: title, body: body, fireDate: event.date, advance: 0
-        )
         try? context.save()
         NotificationCenter.default.post(name: .eventsDidChange, object: nil)
     }
@@ -243,8 +224,8 @@ private extension EventDetailView {
 
 private struct MedicationDetailView: View {
     @Bindable var med: Medication
-    @Binding var isEditing: Bool
     var onDelete: () -> Void
+    @Environment(\.modelContext) private var context
     
     var body: some View {
         Form {
@@ -252,24 +233,30 @@ private struct MedicationDetailView: View {
             
             Section("Información") {
                 TextField("Nombre", text: $med.name)
-                    .disabled(!isEditing)
+                    .onChange(of: med.name) { _, _ in save() }
                 TextField("Dosis", text: $med.dosage)
-                    .disabled(!isEditing)
+                    .onChange(of: med.dosage) { _, _ in save() }
                 TextField("Frecuencia", text: $med.frequency)
-                    .disabled(!isEditing)
+                    .onChange(of: med.frequency) { _, _ in save() }
             }
             
             Section("Fecha") {
                 DatePicker("Programado para",
                            selection: $med.date,
                            displayedComponents: [.date, .hourAndMinute])
-                .disabled(!isEditing)
+                    .onChange(of: med.date) { _, _ in reschedule(for: med) }
             }
             
             Section("Notas") {
                 TextEditor(text: Binding($med.notes, replacingNilWith: ""))
                     .frame(minHeight: 100)
-                    .disabled(!isEditing)
+                    .onChange(of: med.notes) { _, _ in save() }
+            }
+            
+            PrescriptionSection(imageData: $med.prescriptionImageData) {
+                // Propaga a toda la serie (pasado y futuro)
+                let newData = med.prescriptionImageData
+                propagatePrescriptionForMedication(med, with: newData, in: context)
             }
             
             Section {
@@ -277,12 +264,25 @@ private struct MedicationDetailView: View {
             }
         }
     }
+    
+    private func save() {
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
+    
+    private func reschedule(for e: any BasicEvent) {
+        NotificationManager.shared.cancelNotification(id: e.id)
+        let title = e.displayType.isEmpty ? "Evento" : e.displayType
+        let body = "\(e.pet?.name ?? "") – \(e.displayName)"
+        NotificationManager.shared.scheduleNotification(id: e.id, title: title, body: body, fireDate: e.date, advance: 0)
+        save()
+    }
 }
 
 private struct VaccineDetailView: View {
     @Bindable var vac: Vaccine
-    @Binding var isEditing: Bool
     var onDelete: () -> Void
+    @Environment(\.modelContext) private var context
     
     var body: some View {
         Form {
@@ -290,22 +290,27 @@ private struct VaccineDetailView: View {
             
             Section("Información") {
                 TextField("Nombre", text: $vac.vaccineName)
-                    .disabled(!isEditing)
+                    .onChange(of: vac.vaccineName) { _, _ in save() }
                 TextField("Fabricante", text: Binding($vac.manufacturer, replacingNilWith: ""))
-                    .disabled(!isEditing)
+                    .onChange(of: vac.manufacturer) { _, _ in save() }
             }
             
             Section("Fecha") {
                 DatePicker("Programado para",
                            selection: $vac.date,
                            displayedComponents: [.date, .hourAndMinute])
-                .disabled(!isEditing)
+                    .onChange(of: vac.date) { _, _ in reschedule(for: vac) }
             }
             
             Section("Notas") {
                 TextEditor(text: Binding($vac.notes, replacingNilWith: ""))
                     .frame(minHeight: 100)
-                    .disabled(!isEditing)
+                    .onChange(of: vac.notes) { _, _ in save() }
+            }
+            
+            PrescriptionSection(imageData: $vac.prescriptionImageData) {
+                let newData = vac.prescriptionImageData
+                propagatePrescriptionForVaccine(vac, with: newData, in: context)
             }
             
             Section {
@@ -313,12 +318,25 @@ private struct VaccineDetailView: View {
             }
         }
     }
+    
+    private func save() {
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
+    
+    private func reschedule(for e: any BasicEvent) {
+        NotificationManager.shared.cancelNotification(id: e.id)
+        let title = e.displayType.isEmpty ? "Evento" : e.displayType
+        let body = "\(e.pet?.name ?? "") – \(e.displayName)"
+        NotificationManager.shared.scheduleNotification(id: e.id, title: title, body: body, fireDate: e.date, advance: 0)
+        save()
+    }
 }
 
 private struct DewormingDetailView: View {
     @Bindable var dew: Deworming
-    @Binding var isEditing: Bool
     var onDelete: () -> Void
+    @Environment(\.modelContext) private var context
     
     var body: some View {
         Form {
@@ -328,13 +346,18 @@ private struct DewormingDetailView: View {
                 DatePicker("Programado para",
                            selection: $dew.date,
                            displayedComponents: [.date, .hourAndMinute])
-                .disabled(!isEditing)
+                    .onChange(of: dew.date) { _, _ in reschedule(for: dew) }
             }
             
             Section("Notas") {
                 TextEditor(text: Binding($dew.notes, replacingNilWith: ""))
                     .frame(minHeight: 100)
-                    .disabled(!isEditing)
+                    .onChange(of: dew.notes) { _, _ in save() }
+            }
+            
+            PrescriptionSection(imageData: $dew.prescriptionImageData) {
+                let newData = dew.prescriptionImageData
+                propagatePrescriptionForDeworming(dew, with: newData, in: context)
             }
             
             Section {
@@ -342,12 +365,25 @@ private struct DewormingDetailView: View {
             }
         }
     }
+    
+    private func save() {
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
+    
+    private func reschedule(for e: any BasicEvent) {
+        NotificationManager.shared.cancelNotification(id: e.id)
+        let title = e.displayType.isEmpty ? "Evento" : e.displayType
+        let body = "\(e.pet?.name ?? "") – \(e.displayName)"
+        NotificationManager.shared.scheduleNotification(id: e.id, title: title, body: body, fireDate: e.date, advance: 0)
+        save()
+    }
 }
 
 private struct GroomingDetailView: View {
     @Bindable var groom: Grooming
-    @Binding var isEditing: Bool
     var onDelete: () -> Void
+    @Environment(\.modelContext) private var context
     
     var body: some View {
         Form {
@@ -355,16 +391,16 @@ private struct GroomingDetailView: View {
             
             Section("Información") {
                 TextField("Lugar", text: Binding($groom.location, replacingNilWith: ""))
-                    .disabled(!isEditing)
+                    .onChange(of: groom.location) { _, _ in save() }
                 TextField("Descripción", text: Binding($groom.notes, replacingNilWith: ""))
-                    .disabled(!isEditing)
+                    .onChange(of: groom.notes) { _, _ in save() }
             }
             
             Section("Fecha") {
                 DatePicker("Programado para",
                            selection: $groom.date,
                            displayedComponents: [.date, .hourAndMinute])
-                .disabled(!isEditing)
+                    .onChange(of: groom.date) { _, _ in reschedule(for: groom) }
             }
             
             Section {
@@ -372,12 +408,25 @@ private struct GroomingDetailView: View {
             }
         }
     }
+    
+    private func save() {
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
+    
+    private func reschedule(for e: any BasicEvent) {
+        NotificationManager.shared.cancelNotification(id: e.id)
+        let title = e.displayType.isEmpty ? "Evento" : e.displayType
+        let body = "\(e.pet?.name ?? "") – \(e.displayName)"
+        NotificationManager.shared.scheduleNotification(id: e.id, title: title, body: body, fireDate: e.date, advance: 0)
+        save()
+    }
 }
 
 private struct WeightEntryDetailView: View {
     @Bindable var weight: WeightEntry
-    @Binding var isEditing: Bool
     var onDelete: () -> Void
+    @Environment(\.modelContext) private var context
     
     var body: some View {
         Form {
@@ -386,24 +435,122 @@ private struct WeightEntryDetailView: View {
             Section("Medición") {
                 TextField("Peso (kg)", value: $weight.weightKg, format: .number.precision(.fractionLength(1)))
                     .keyboardType(.decimalPad)
-                    .disabled(!isEditing)
+                    .onChange(of: weight.weightKg) { _, _ in save() }
             }
             
             Section("Fecha") {
                 DatePicker("Tomado el",
                            selection: $weight.date,
                            displayedComponents: [.date, .hourAndMinute])
-                .disabled(!isEditing)
+                    .onChange(of: weight.date) { _, _ in reschedule(for: weight) }
             }
             
             Section("Notas") {
                 TextEditor(text: Binding($weight.notes, replacingNilWith: ""))
                     .frame(minHeight: 100)
-                    .disabled(!isEditing)
+                    .onChange(of: weight.notes) { _, _ in save() }
             }
             
             Section {
                 Button("Eliminar registro", role: .destructive, action: onDelete)
+            }
+        }
+    }
+    
+    private func save() {
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
+    
+    private func reschedule(for e: any BasicEvent) {
+        NotificationManager.shared.cancelNotification(id: e.id)
+        let title = e.displayType.isEmpty ? "Evento" : e.displayType
+        let body = "\(e.pet?.name ?? "") – \(e.displayName)"
+        NotificationManager.shared.scheduleNotification(id: e.id, title: title, body: body, fireDate: e.date, advance: 0)
+        save()
+    }
+}
+
+// MARK: - Sección reutilizable de Prescripción
+
+private struct PrescriptionSection: View {
+    @Binding var imageData: Data?
+    var onChange: () -> Void = {}
+    
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showingCamera = false
+    @State private var showingFullImage = false
+    
+    var body: some View {
+        Section("Prescripción") {
+            if let data = imageData, let ui = UIImage(data: data) {
+                VStack(spacing: 8) {
+                    Button {
+                        showingFullImage = true
+                    } label: {
+                        Image(uiImage: ui)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                    }
+                    HStack {
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            Label("Reemplazar", systemImage: "photo")
+                        }
+                        
+                        Button(role: .destructive) {
+                            imageData = nil
+                            onChange()
+                        } label: {
+                            Label("Eliminar", systemImage: "trash")
+                        }
+                        
+                        Spacer()
+                        
+                        if let dataToShare = imageData {
+                            ShareLink(item: dataToShare, preview: .init("Prescripción", image: Image(uiImage: ui)))
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+            } else {
+                HStack {
+                    Button {
+                        showingCamera = true
+                    } label: {
+                        Label("Tomar foto", systemImage: "camera")
+                    }
+                    
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label("Elegir de la fototeca", systemImage: "photo.on.rectangle")
+                    }
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .onChange(of: photoItem) { _, newItem in
+            guard let item = newItem else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    await MainActor.run {
+                        self.imageData = data
+                        self.onChange()
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingCamera) {
+            CameraPicker(imageData: $imageData) {
+                onChange()
+            }
+        }
+        .fullScreenCover(isPresented: $showingFullImage) {
+            if let data = imageData, let ui = UIImage(data: data) {
+                ZoomableImageView(image: ui) {
+                    showingFullImage = false
+                }
             }
         }
     }
@@ -455,12 +602,227 @@ private struct Header: View {
 }
 
 // MARK: - Binding helpers para opcionales
-private extension Binding where Value == String? {
+private extension Binding where Value == String {
     init(_ source: Binding<String?>, replacingNilWith placeholder: String) {
         self.init(
-            get: { source.wrappedValue ?? "" },
+            get: { source.wrappedValue ?? placeholder },
             set: { newValue in source.wrappedValue = newValue.isEmpty ? nil : newValue }
         )
     }
 }
 
+// MARK: - Viewer con zoom para la imagen de prescripción
+private struct ZoomableImageView: View {
+    let image: UIImage
+    var onClose: () -> Void
+    
+    @State private var scale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(MagnificationGesture().onChanged { value in
+                        scale = max(1.0, value)
+                    })
+                    .gesture(DragGesture().onChanged { value in
+                        offset = value.translation
+                    }.onEnded { _ in
+                        if scale == 1 { offset = .zero }
+                    })
+                    .background(Color.black.opacity(0.98))
+                    .ignoresSafeArea()
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cerrar", action: onClose)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Propagación a toda la serie
+
+// Base del nombre sin sufijo " (dosis X/Y)"
+private func splitDoseBase(from name: String) -> String {
+    guard name.hasSuffix(")"),
+          let markerRange = name.range(of: " (dosis ", options: [.backwards]) else {
+        return name
+    }
+    let base = String(name[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+    return base
+}
+
+private func propagatePrescriptionForMedication(_ med: Medication, with data: Data?, in context: ModelContext) {
+    guard let petID = med.pet?.id else { return }
+    let base = splitDoseBase(from: med.name)
+    let predicate = #Predicate<Medication> { m in
+        m.pet?.id == petID
+    }
+    let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
+    let siblings = fetched.filter { splitDoseBase(from: $0.name) == base }
+    for s in siblings {
+        s.prescriptionImageData = data
+    }
+    try? context.save()
+    NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+}
+
+private func propagatePrescriptionForVaccine(_ vac: Vaccine, with data: Data?, in context: ModelContext) {
+    guard let petID = vac.pet?.id else { return }
+    let base = splitDoseBase(from: vac.vaccineName)
+    let predicate = #Predicate<Vaccine> { v in
+        v.pet?.id == petID
+    }
+    let fetched = (try? context.fetch(FetchDescriptor<Vaccine>(predicate: predicate))) ?? []
+    let siblings = fetched.filter { splitDoseBase(from: $0.vaccineName) == base }
+    for s in siblings {
+        s.prescriptionImageData = data
+    }
+    try? context.save()
+    NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+}
+
+private func propagatePrescriptionForDeworming(_ dew: Deworming, with data: Data?, in context: ModelContext) {
+    guard let petID = dew.pet?.id else { return }
+    func norm(_ s: String?) -> String {
+        (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+    let baseNotes = norm(dew.notes)
+    let predicate = #Predicate<Deworming> { d in
+        d.pet?.id == petID
+    }
+    let fetched = (try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))) ?? []
+    let siblings = fetched.filter { norm($0.notes) == baseNotes }
+    for s in siblings {
+        s.prescriptionImageData = data
+    }
+    try? context.save()
+    NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+}
+
+// MARK: - Previews (se mantienen igual que antes)
+
+private enum EventDetailPreviewData {
+    static func makeContainer() -> ModelContainer {
+        let schema = Schema([
+            Pet.self,
+            Medication.self,
+            Vaccine.self,
+            Deworming.self,
+            Grooming.self,
+            WeightEntry.self
+        ])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try! ModelContainer(for: schema, configurations: config)
+    }
+}
+
+#Preview("Detalle – Medicamento") {
+    let container = EventDetailPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    
+    let pet = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
+    ctx.insert(pet)
+    
+    let med = Medication(date: Date().addingTimeInterval(3600),
+                         pet: pet,
+                         name: "Amoxicilina (dosis 1/3)",
+                         dosage: "250 mg",
+                         frequency: "cada 8 h",
+                         notes: "Tomar con comida")
+    ctx.insert(med)
+    try? ctx.save()
+    
+    return NavigationStack {
+        EventDetailView(event: med)
+    }
+    .modelContainer(container)
+}
+
+#Preview("Detalle – Vacuna") {
+    let container = EventDetailPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    
+    let pet = Pet(name: "Mishi", species: .gato, breed: "Común", sex: .female)
+    ctx.insert(pet)
+    
+    let vac = Vaccine(date: Date().addingTimeInterval(24*3600),
+                      pet: pet,
+                      vaccineName: "Rabia (dosis 1/3)",
+                      manufacturer: "VetLabs",
+                      notes: "Primera dosis")
+    ctx.insert(vac)
+    try? ctx.save()
+    
+    return NavigationStack {
+        EventDetailView(event: vac)
+    }
+    .modelContainer(container)
+}
+
+#Preview("Detalle – Desparasitación") {
+    let container = EventDetailPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    
+    let pet = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
+    ctx.insert(pet)
+    
+    let dew = Deworming(date: Date().addingTimeInterval(7*24*3600),
+                        pet: pet,
+                        notes: "Tableta mensual")
+    ctx.insert(dew)
+    try? ctx.save()
+    
+    return NavigationStack {
+        EventDetailView(event: dew)
+    }
+    .modelContainer(container)
+}
+
+#Preview("Detalle – Grooming") {
+    let container = EventDetailPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    
+    let pet = Pet(name: "Mishi", species: .gato, breed: "Común", sex: .female)
+    ctx.insert(pet)
+    
+    let groom = Grooming(date: Date().addingTimeInterval(3*24*3600),
+                         pet: pet,
+                         location: "Pet Spa",
+                         notes: "Baño y corte")
+    ctx.insert(groom)
+    try? ctx.save()
+    
+    return NavigationStack {
+        EventDetailView(event: groom)
+    }
+    .modelContainer(container)
+}
+
+#Preview("Detalle – Peso") {
+    let container = EventDetailPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    
+    let pet = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
+    ctx.insert(pet)
+    
+    let weight = WeightEntry(date: Date().addingTimeInterval(-2*24*3600),
+                             pet: pet,
+                             weightKg: 23.4,
+                             notes: "Post entrenamiento")
+    ctx.insert(weight)
+    try? ctx.save()
+    
+    return NavigationStack {
+        EventDetailView(event: weight)
+    }
+    .modelContainer(container)
+}

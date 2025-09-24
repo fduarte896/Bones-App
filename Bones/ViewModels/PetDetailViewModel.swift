@@ -27,16 +27,6 @@ final class PetDetailViewModel: ObservableObject {
         fetchEvents()
     }
     
-    
-    private func fetch<T: BasicEvent & PersistentModel>(
-        _ type: T.Type,
-        in context: ModelContext
-    ) -> [T] {
-        let predicate = #Predicate<T> { $0.pet?.id == petID }
-        let desc = FetchDescriptor<T>(predicate: predicate)
-        return (try? context.fetch(desc)) ?? []
-    }
-    
     // 1️⃣  Estructura auxiliar
     struct EventSection: Identifiable {
         let id = UUID()
@@ -47,16 +37,43 @@ final class PetDetailViewModel: ObservableObject {
     // 2️⃣  Propiedad publicada
     @Published var groupedUpcomingEvents: [EventSection] = []
 
-    // 3️⃣  Actualiza fetchEvents()
+    // 3️⃣  Actualiza fetchEvents() con predicados concretos por tipo
     func fetchEvents() {
         guard let context else { return }
 
+        // Fetch por tipo con #Predicate concreto (evita genérico sobre protocolo)
+        let meds: [Medication] = {
+            let predicate = #Predicate<Medication> { $0.pet?.id == petID }
+            let desc = FetchDescriptor<Medication>(predicate: predicate)
+            return (try? context.fetch(desc)) ?? []
+        }()
+        let vacs: [Vaccine] = {
+            let predicate = #Predicate<Vaccine> { $0.pet?.id == petID }
+            let desc = FetchDescriptor<Vaccine>(predicate: predicate)
+            return (try? context.fetch(desc)) ?? []
+        }()
+        let dews: [Deworming] = {
+            let predicate = #Predicate<Deworming> { $0.pet?.id == petID }
+            let desc = FetchDescriptor<Deworming>(predicate: predicate)
+            return (try? context.fetch(desc)) ?? []
+        }()
+        let grooms: [Grooming] = {
+            let predicate = #Predicate<Grooming> { $0.pet?.id == petID }
+            let desc = FetchDescriptor<Grooming>(predicate: predicate)
+            return (try? context.fetch(desc)) ?? []
+        }()
+        let weights: [WeightEntry] = {
+            let predicate = #Predicate<WeightEntry> { $0.pet?.id == petID }
+            let desc = FetchDescriptor<WeightEntry>(predicate: predicate)
+            return (try? context.fetch(desc)) ?? []
+        }()
+
         var all: [any BasicEvent] = []
-        all.append(contentsOf: fetch(Medication.self,  in: context))
-        all.append(contentsOf: fetch(Vaccine.self,     in: context))
-        all.append(contentsOf: fetch(Deworming.self,   in: context))
-        all.append(contentsOf: fetch(Grooming.self,    in: context))
-        all.append(contentsOf: fetch(WeightEntry.self, in: context))
+        all.append(contentsOf: meds)
+        all.append(contentsOf: vacs)
+        all.append(contentsOf: dews)
+        all.append(contentsOf: grooms)
+        all.append(contentsOf: weights)
 
         let upcoming = all
             .filter { $0.date >= Date() && !$0.isCompleted }
@@ -69,8 +86,6 @@ final class PetDetailViewModel: ObservableObject {
         groupedUpcomingEvents = dict
             .sorted { $0.key.rawValue < $1.key.rawValue }      // orden lógico
             .map { EventSection(title: $0.key.label, items: $0.value) }
-
-        
     }
 
     // MARK: - Pesos por mascota
@@ -108,9 +123,6 @@ final class PetDetailViewModel: ObservableObject {
         }
         fetchEvents()
     }
-
-
-
 }
 
 extension Calendar {
@@ -137,11 +149,6 @@ extension Calendar {
     }
 }
 
-
-
-
-
-
 // MARK: - Filtering helpers
 extension PetDetailViewModel {
     
@@ -157,7 +164,7 @@ extension PetDetailViewModel {
         let filtered = all.filter { $0.pet?.id == petID }
         
         // 3. Ordena (más reciente arriba)
-        return filtered.sorted { $0.date > $1.date }
+        return filtered.sorted { $0.date < $1.date }
     }
     
     // MARK: - Vacunas por mascota
@@ -167,9 +174,8 @@ extension PetDetailViewModel {
         let all = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
         let filtered = all.filter { $0.pet?.id == petID }
         
-        return filtered.sorted { $0.date > $1.date }   // más reciente arriba
+        return filtered.sorted { $0.date < $1.date }   // más reciente arriba
     }
-
 
     // MARK: - Grooming por mascota
     var groomings: [Grooming] {
@@ -192,8 +198,6 @@ extension PetDetailViewModel {
         
         return filtered.sorted { $0.date > $1.date }   // próximo primero
     }
-
-
 }
 
 enum EventSectionKind: Int, CaseIterable, Hashable {

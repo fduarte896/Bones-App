@@ -33,10 +33,40 @@ private struct VaccineRow: View {
     var context: ModelContext
     var viewModel: PetDetailViewModel
     
+    // Extrae " (dosis X/Y)" del nombre si existe
+    private func splitDose(from name: String) -> (base: String, dose: String?) {
+        guard name.hasSuffix(")"),
+              let markerRange = name.range(of: " (dosis ", options: [.backwards]) else {
+            return (name, nil)
+        }
+        let openParenIndex = name.index(markerRange.lowerBound, offsetBy: 1) // "("
+        let closingParenIndex = name.index(before: name.endIndex)            // ")"
+        guard closingParenIndex > openParenIndex else { return (name, nil) }
+        let contentStart = name.index(after: openParenIndex)
+        let contentEnd   = closingParenIndex
+        let inside = String(name[contentStart..<contentEnd]) // "dosis X/Y"
+        if inside.lowercased().hasPrefix("dosis ") {
+            let base = String(name[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let dose = inside.replacingOccurrences(of: "dosis", with: "Dosis", options: [.anchored, .caseInsensitive])
+            return (base, dose)
+        } else {
+            return (name, nil)
+        }
+    }
+    
     var body: some View {
+        let parsed = splitDose(from: vac.vaccineName)
+        
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(vac.vaccineName).fontWeight(.semibold)
+                Text(parsed.base).fontWeight(.semibold)
+                
+                if let doseLabel = parsed.dose {
+                    Text(doseLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
                 if let m = vac.manufacturer, !m.isEmpty {
                     Text("Fabricante: \(m)")
                         .font(.caption)

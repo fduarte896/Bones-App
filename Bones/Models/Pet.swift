@@ -31,7 +31,7 @@ class Pet {
     @Relationship(deleteRule: .cascade, inverse: \WeightEntry.pet) var weights: [WeightEntry] = []
 
     init(name: String,
-         species: Species = .dog,
+         species: Species = .perro,
          breed: String? = nil,
          birthDate: Date? = nil,
          sex: Sex = .unknown,
@@ -51,7 +51,7 @@ class Pet {
 }
 
 enum Species: String, Codable, CaseIterable {
-    case dog, cat
+    case perro, gato
 }
 
 enum Sex: String, Codable, CaseIterable {
