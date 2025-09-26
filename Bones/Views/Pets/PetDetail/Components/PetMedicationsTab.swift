@@ -12,6 +12,11 @@ struct PetMedicationsTab: View {
     @ObservedObject var viewModel: PetDetailViewModel
     @Environment(\.modelContext) private var context
     
+    // Confirmación de borrado en serie
+    @State private var pendingFutureCount = 0
+    @State private var showingDeleteDialog = false
+    @State private var pendingDelete: Medication?
+    
     var body: some View {
         List {
             if viewModel.medications.isEmpty {
@@ -19,66 +24,99 @@ struct PetMedicationsTab: View {
                                        systemImage: "pills.fill")
             } else {
                 ForEach(viewModel.medications, id: \.id) { med in
-                    MedicationRow(med: med, context: context, viewModel: viewModel)
+                    NavigationLink {
+                        EventDetailView(event: med)
+                    } label: {
+                        MedicationRow(med: med)
+                    }
+                    // Swipe: completar
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            med.isCompleted.toggle()
+                            NotificationManager.shared.cancelNotification(id: med.id)
+                            try? context.save()
+                            viewModel.fetchEvents()
+                        } label: {
+                            Label("Completar", systemImage: "checkmark")
+                        }
+                        .tint(.green)
+                    }
+                    // Swipe: borrar (con confirmación de serie)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            startDelete(for: med)
+                        } label: {
+                            Label("Borrar", systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
         .onAppear { viewModel.fetchEvents() }   // refresca si usas propiedad @Published
+        .onReceive(NotificationCenter.default.publisher(for: .eventsDidChange)) { _ in
+            viewModel.fetchEvents()
+        }
+        .confirmationDialog(
+            "¿Eliminar también futuras dosis?",
+            isPresented: $showingDeleteDialog,
+            titleVisibility: .visible
+        ) {
+            if pendingFutureCount > 0 {
+                Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
+                    deleteThisAndFuture()
+                }
+                Button("Eliminar solo esta", role: .destructive) {
+                    if let med = pendingDelete { deleteSingle(med) }
+                }
+            } else {
+                Button("Eliminar", role: .destructive) {
+                    if let med = pendingDelete { deleteSingle(med) }
+                }
+            }
+            Button("Cancelar", role: .cancel) { clearPending() }
+        } message: {
+            if pendingFutureCount > 0 {
+                Text("Se encontraron \(pendingFutureCount) dosis futuras relacionadas. ¿Deseas borrarlas también?")
+            } else {
+                Text("Esta acción no se puede deshacer.")
+            }
+        }
     }
 }
 
 // MARK: - Fila
 private struct MedicationRow: View {
-    @Bindable var med: Medication            // Bindable para actualizar isCompleted
-    var context: ModelContext
-    var viewModel: PetDetailViewModel
-    
-    // Separa "Nombre (dosis X/Y)" en (base: "Nombre", dose: "Dosis X/Y")
-    private func splitDose(from name: String) -> (base: String, dose: String?) {
-        // Buscamos un sufijo del tipo " (dosis X/Y)" al final del string
-        guard name.hasSuffix(")"),
-              let markerRange = name.range(of: " (dosis ", options: [.backwards]) else {
-            return (name, nil)
-        }
-        // El paréntesis de apertura
-        let openParenIndex = name.index(markerRange.lowerBound, offsetBy: 1) // apunta a "("
-        // El paréntesis de cierre al final
-        let closingParenIndex = name.index(before: name.endIndex)            // apunta a ")"
-        guard closingParenIndex > openParenIndex else {
-            return (name, nil)
-        }
-        let contentStart = name.index(after: openParenIndex) // después de "("
-        let contentEnd   = closingParenIndex                 // antes de ")"
-        let inside = String(name[contentStart..<contentEnd]) // "dosis X/Y"
-        
-        // Validamos que realmente sea "dosis N/M"
-        if inside.lowercased().hasPrefix("dosis ") {
-            let base = String(name[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-            // Capitalizamos "Dosis" para mostrar como etiqueta
-            let dose = inside.replacingOccurrences(of: "dosis", with: "Dosis", options: [.anchored, .caseInsensitive])
-            return (base, dose)
-        } else {
-            return (name, nil)
-        }
-    }
+    @Bindable var med: Medication            // Bindable para reflejar cambios en línea
+    @Environment(\.modelContext) private var context
     
     var body: some View {
-        let parsed = splitDose(from: med.name)
+        let parsed = DoseSeries.splitDose(from: med.name)
+        
+        // Normalizamos espacios en blanco
+        let dosageText = med.dosage.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Preferimos la frecuencia inferida; si no se puede, usamos la guardada (fallback)
+        let inferred = inferredFrequency(for: med)
+        let frequencyText = inferred?.trimmingCharacters(in: .whitespacesAndNewlines)
+                           ?? med.frequency.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Transformamos “Dosis X/Y” -> “Toma X/Y” para evitar confusión con la cantidad
+        let doseSuffix = parsed.dose.map { $0.replacingOccurrences(of: "Dosis", with: "Toma") }
         
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 // Nombre del medicamento (sin el sufijo de dosis)
                 Text(parsed.base).fontWeight(.semibold)
                 
-                // Línea dedicada al número de la dosis (si aplica)
-                if let doseLabel = parsed.dose {
-                    Text(doseLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                // Línea compacta: cantidad · frecuencia · Toma X/Y
+                let parts: [String] = {
+                    var items: [String] = []
+                    if !dosageText.isEmpty { items.append(dosageText) }
+                    if !frequencyText.isEmpty { items.append(frequencyText) }
+                    if let doseSuffix { items.append(doseSuffix) }
+                    if items.isEmpty { items = ["Dosis no asignada"] }
+                    return items
+                }()
                 
-                // Dosis y frecuencia
-                Text("Dosis: \(med.dosage)  \(med.frequency)")
+                Text(parts.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
@@ -92,104 +130,251 @@ private struct MedicationRow: View {
                                               : "pills.circle")
                 .foregroundStyle(med.isCompleted ? .green : .accentColor)
         }
-        .swipeActions(edge: .leading) {
-            Button {
-                med.isCompleted.toggle()
-                try? context.save()
-            } label: {
-                Label("Completar", systemImage: "checkmark")
-            }.tint(.green)
+    }
+    
+    // MARK: - Frecuencia inferida
+    private func inferredFrequency(for med: Medication) -> String? {
+        // 1) Si hubiera una rrule válida, podríamos formatearla aquí.
+        if let rule = med.rrule, let fromRule = format(rrule: rule) {
+            return fromRule
         }
-        .swipeActions(edge: .trailing) {
-            Button(role: .destructive) {
-                NotificationManager.shared.cancelNotification(id: med.id)
-                context.delete(med)
-                try? context.save()
-            } label: {
-                Label("Borrar", systemImage: "trash")
+        
+        // 2) Inferir a partir del intervalo entre tomas de la misma serie
+        guard let petID = med.pet?.id else { return nil }
+        let base = DoseSeries.splitDoseBase(from: med.name)
+        
+        // Traer todos los meds de esa mascota (rápido: pocos objetos)
+        let predicate = #Predicate<Medication> { $0.pet?.id == petID }
+        let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
+        let siblings = fetched.filter { DoseSeries.splitDoseBase(from: $0.name) == base }
+                              .sorted { $0.date < $1.date }
+        guard !siblings.isEmpty else { return nil }
+        
+        // Buscar el siguiente (o anterior) relativo a este med
+        if let idx = siblings.firstIndex(where: { $0.id == med.id }) {
+            // Preferimos el siguiente
+            if idx + 1 < siblings.count {
+                let interval = siblings[idx + 1].date.timeIntervalSince(med.date)
+                if interval > 0 { return format(interval: interval) }
+            }
+            // Si no hay siguiente, usamos el anterior
+            if idx > 0 {
+                let interval = med.date.timeIntervalSince(siblings[idx - 1].date)
+                if interval > 0 { return format(interval: interval) }
+            }
+        } else {
+            // Si por alguna razón no encontramos el índice (p. ej. sin guardar),
+            // intentamos la diferencia con el más cercano en fecha
+            if let nearest = siblings.min(by: { abs($0.date.timeIntervalSince(med.date)) < abs($1.date.timeIntervalSince(med.date)) }) {
+                let interval = abs(nearest.date.timeIntervalSince(med.date))
+                if interval > 0 { return format(interval: interval) }
             }
         }
-    }
-}
-
-
-//#Preview {
-//    PetMedicationsTab()
-//}
-
-#Preview("PetMedicationsTab – Demo") {
-    // 1) Contenedor en memoria con el esquema necesario
-    let container = PreviewData.makeContainer()
-    // 2) Insertamos datos de ejemplo y recibimos la mascota
-    let pet = PreviewData.samplePet(in: container)
-    
-    // 3) Host que crea e inyecta el ViewModel con el context del entorno
-    return PetMedicationsTabPreviewHost(pet: pet)
-        .modelContainer(container)
-}
-
-// MARK: - Preview Host
-private struct PetMedicationsTabPreviewHost: View {
-    let pet: Pet
-    @Environment(\.modelContext) private var context
-    @StateObject private var vm: PetDetailViewModel
-    
-    init(pet: Pet) {
-        self.pet = pet
-        _vm = StateObject(wrappedValue: PetDetailViewModel(petID: pet.id))
+        return nil
     }
     
-    var body: some View {
-        PetMedicationsTab(viewModel: vm)
-            .onAppear {
-                vm.inject(context: context)
+    // Intenta formatear algunas RRULE simples (HOURLY/DAILY/WEEKLY/MONTHLY con INTERVAL)
+    private func format(rrule: String) -> String? {
+        // Muy básico: extrae FREQ e INTERVAL
+        // Ej.: "FREQ=HOURLY;INTERVAL=8"
+        let parts = rrule
+            .split(separator: ";")
+            .map { $0.split(separator: "=").map(String.init) }
+            .reduce(into: [String: String]()) { dict, kv in
+                if kv.count == 2 { dict[kv[0].uppercased()] = kv[1].uppercased() }
             }
+        guard let freq = parts["FREQ"] else { return nil }
+        let interval = Int(parts["INTERVAL"] ?? "1") ?? 1
+        
+        switch freq {
+        case "HOURLY":
+            return "cada \(interval) h"
+        case "DAILY":
+            return interval == 1 ? "cada día" : "cada \(interval) días"
+        case "WEEKLY":
+            return interval == 1 ? "cada semana" : "cada \(interval) semanas"
+        case "MONTHLY":
+            return interval == 1 ? "cada mes" : "cada \(interval) meses"
+        default:
+            return nil
+        }
+    }
+    
+    // Convierte un intervalo a una frase “cada X …” con redondeo razonable
+    private func format(interval: TimeInterval) -> String {
+        let hour: Double = 3600
+        let day: Double = 24 * hour
+        let week: Double = 7 * day
+        let month: Double = 30 * day
+        
+        if interval < 1.5 * day {
+            // Redondeo a horas típicas
+            let hours = interval / hour
+            let canonical: [Double] = [4, 6, 8, 12, 24]
+            let nearest = canonical.min(by: { abs($0 - hours) < abs($1 - hours) }) ?? round(hours)
+            let h = Int(nearest.rounded())
+            return h == 24 ? "cada día" : "cada \(h) h"
+        } else if interval < 2 * week {
+            let days = Int((interval / day).rounded())
+            return days == 1 ? "cada día" : "cada \(days) días"
+        } else if interval < 2 * month {
+            let weeks = Int((interval / week).rounded())
+            return weeks <= 1 ? "cada semana" : "cada \(weeks) semanas"
+        } else {
+            let months = Int((interval / month).rounded())
+            return months <= 1 ? "cada mes" : "cada \(months) meses"
+        }
     }
 }
 
-// MARK: - Preview Data Helper
-private enum PreviewData {
+// MARK: - Helpers de borrado en serie
+private extension PetMedicationsTab {
+    func startDelete(for med: Medication) {
+        // Cuenta cuántas futuras hay en la misma serie (incluye la actual)
+        let count = max(0, DoseSeries.futureMedications(from: med, in: context).count - 1)
+        if count == 0 {
+            deleteSingle(med)
+        } else {
+            pendingDelete = med
+            pendingFutureCount = count
+            showingDeleteDialog = true
+        }
+    }
+    
+    func deleteSingle(_ med: Medication) {
+        NotificationManager.shared.cancelNotification(id: med.id)
+        context.delete(med)
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearPending()
+    }
+    
+    func deleteThisAndFuture() {
+        guard let med = pendingDelete else { return }
+        let all = DoseSeries.futureMedications(from: med, in: context)
+        for m in all {
+            NotificationManager.shared.cancelNotification(id: m.id)
+            context.delete(m)
+        }
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearPending()
+    }
+    
+    func clearPending() {
+        pendingFutureCount = 0
+        pendingDelete = nil
+        showingDeleteDialog = false
+    }
+}
+
+// MARK: - Previews
+
+private enum PetMedicationsPreviewData {
     static func makeContainer() -> ModelContainer {
         let schema = Schema([
             Pet.self,
-            Medication.self,
-            Vaccine.self,
-            Deworming.self,
-            Grooming.self,
-            WeightEntry.self
+            Medication.self
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try! ModelContainer(for: schema, configurations: config)
-        return container
+        return try! ModelContainer(for: schema, configurations: config)
     }
+}
+
+#Preview("MedTab – Sin dosis") {
+    let container = PetMedicationsPreviewData.makeContainer()
+    let ctx = ModelContext(container)
     
-    @discardableResult
-    static func samplePet(in container: ModelContainer) -> Pet {
-        let ctx = ModelContext(container)
-        let pet = Pet(name: "Loki", species: .perro, breed: "Husky")
-        ctx.insert(pet)
-        
-        let base = Date().addingTimeInterval(60 * 60) // +1h
-        let m1 = Medication(date: base,
-                            pet: pet,
-                            name: "Amoxicilina (dosis 2/5)",
-                            dosage: "250 mg",
-                            frequency: "cada 8 h")
-        let m2 = Medication(date: base.addingTimeInterval(8 * 3600),
-                            pet: pet,
-                            name: "Amoxicilina (dosis 3/5)",
-                            dosage: "250 mg",
-                            frequency: "cada 8 h")
-        let m3 = Medication(date: base.addingTimeInterval(2 * 24 * 3600),
-                            pet: pet,
-                            name: "Omeprazol",
-                            dosage: "10 mg",
-                            frequency: "cada día")
-        
-        ctx.insert(m1)
-        ctx.insert(m2)
-        ctx.insert(m3)
-        try? ctx.save()
-        return pet
+    // Mascota
+    let pet = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
+    ctx.insert(pet)
+    
+    // Medicamentos SIN sufijo de serie (no muestran “Toma X/Y”)
+    let m1 = Medication(date: Date().addingTimeInterval(3600),
+                        pet: pet,
+                        name: "Amoxicilina",
+                        dosage: "250 mg",
+                        frequency: "cada 8 h")
+    let m2 = Medication(date: Date().addingTimeInterval(6*3600),
+                        pet: pet,
+                        name: "Omeprazol",
+                        dosage: "20 mg",
+                        frequency: "cada 24 h")
+    ctx.insert(m1)
+    ctx.insert(m2)
+    try? ctx.save()
+    
+    // ViewModel e inyección del MISMO context
+    let vm = PetDetailViewModel(petID: pet.id)
+    vm.inject(context: ctx)
+    
+    return NavigationStack {
+        PetMedicationsTab(viewModel: vm)
     }
+    .modelContext(ctx)
+}
+
+#Preview("MedTab – Una sola dosis (1/1)") {
+    let container = PetMedicationsPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    
+    let pet = Pet(name: "Mishi", species: .gato, breed: "Común", sex: .female)
+    ctx.insert(pet)
+    
+    // Medicamento con una sola toma (1/1)
+    let m = Medication(date: Date().addingTimeInterval(2*3600),
+                       pet: pet,
+                       name: "Doxiciclina (dosis 1/1)",
+                       dosage: "50 mg",
+                       frequency: "cada 12 h")
+    ctx.insert(m)
+    try? ctx.save()
+    
+    let vm = PetDetailViewModel(petID: pet.id)
+    vm.inject(context: ctx)
+    
+    return NavigationStack {
+        PetMedicationsTab(viewModel: vm)
+    }
+    .modelContext(ctx)
+}
+
+#Preview("MedTab – Varias dosis (1/3, 2/3, 3/3)") {
+    let container = PetMedicationsPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    
+    let pet = Pet(name: "Bobby", species: .perro, breed: "Mestizo", sex: .male)
+    ctx.insert(pet)
+    
+    // Serie de varias tomas del mismo medicamento
+    let base = "Amoxicilina"
+    let m1 = Medication(date: Date().addingTimeInterval(1*3600),
+                        pet: pet,
+                        name: "\(base) (dosis 1/3)",
+                        dosage: "250 mg",
+                        frequency: "")
+    let m2 = Medication(date: Date().addingTimeInterval(9*3600),
+                        pet: pet,
+                        name: "\(base) (dosis 2/3)",
+                        dosage: "250 mg",
+                        frequency: "")
+    let m3 = Medication(date: Date().addingTimeInterval(17*3600),
+                        pet: pet,
+                        name: "\(base) (dosis 3/3)",
+                        dosage: "250 mg",
+                        frequency: "")
+    ctx.insert(m1)
+    ctx.insert(m2)
+    ctx.insert(m3)
+    try? ctx.save()
+    
+    let vm = PetDetailViewModel(petID: pet.id)
+    vm.inject(context: ctx)
+    
+    return NavigationStack {
+        PetMedicationsTab(viewModel: vm)
+    }
+    .modelContext(ctx)
 }

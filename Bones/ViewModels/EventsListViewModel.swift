@@ -13,7 +13,6 @@ enum EventTypeFilter: String, CaseIterable, Identifiable {
     case all        = "Todos"
     case medication = "Medicamentos"
     case vaccine    = "Vacunas"
-    case deworming  = "Desparasitación"
     case grooming   = "Grooming"
     case weight     = "Peso"
     
@@ -24,7 +23,6 @@ enum EventTypeFilter: String, CaseIterable, Identifiable {
         case .all:         return true
         case .medication:  return event is Medication
         case .vaccine:     return event is Vaccine
-        case .deworming:   return event is Deworming
         case .grooming:    return event is Grooming
         case .weight:      return event is WeightEntry
         }
@@ -72,11 +70,21 @@ final class EventsListViewModel: ObservableObject {
     func fetchAllEvents() {
         // Trae cada tipo – filtraremos después
         var combined: [any BasicEvent] = []
-        combined += (try? context.fetch(FetchDescriptor<Medication>())) ?? []
-        combined += (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
-        combined += (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
-        combined += (try? context.fetch(FetchDescriptor<Grooming>())) ?? []
-        combined += (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
+        
+        let meds = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
+        combined.append(contentsOf: meds.map { $0 as any BasicEvent })
+        
+        let vacs = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
+        combined.append(contentsOf: vacs.map { $0 as any BasicEvent })
+        
+        let dews = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
+        combined.append(contentsOf: dews.map { $0 as any BasicEvent })
+        
+        let grooms = (try? context.fetch(FetchDescriptor<Grooming>())) ?? []
+        combined.append(contentsOf: grooms.map { $0 as any BasicEvent })
+        
+        let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
+        combined.append(contentsOf: weights.map { $0 as any BasicEvent })
         
         allEvents = combined
         buildSections()
@@ -137,9 +145,7 @@ final class EventsListViewModel: ObservableObject {
         } else {
             print("↩️ \(event.displayName) marcado como pendiente de nuevo")
         }
-        // En EventsListViewModel.delete(_:)
         NotificationCenter.default.post(name: .eventsDidChange, object: nil)
-
         fetchAllEvents()
     }
 }

@@ -144,8 +144,6 @@ struct PetDetailView: View {
                     PetMedicationsTab(viewModel: viewModel)
                 case .vaccines:
                     PetVaccinesTab(viewModel: viewModel)
-                case .deworming:
-                    PetDewormingTab(viewModel: viewModel)
                 case .grooming:
                     PetGroomingTab(viewModel: viewModel)
                 case .weight:
@@ -179,23 +177,13 @@ struct PetDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .automatic) {
-//                Menu {
-//                    Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
-//                    Divider()
-//                    // Botón + existente
-//                    Button { showingQuickAdd = true } label: {
-//                        Label("Nuevo evento", systemImage: "plus")
-//                    }
-//                } label: { Image(systemName: "ellipsis.circle") }
                 Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
             }
             ToolbarItem(placement: .automatic) {
-                                    Button { showingQuickAdd = true } label: {
-                                        Label("Nuevo evento", systemImage: "plus")
-                                    }
+                Button { showingQuickAdd = true } label: {
+                    Label("Nuevo evento", systemImage: "plus")
+                }
             }
-            
-
         }
         .sheet(isPresented: $showingQuickAdd, onDismiss: {
             viewModel.fetchEvents()          // refresca la lista al volver
@@ -207,8 +195,6 @@ struct PetDetailView: View {
         .sheet(isPresented: $isPresentingEdit) {
             EditPetSheet(pet: pet)
         }
-        
-
 
         // Inyectamos el context real en el ViewModel al aparecer
         .onAppear { viewModel.inject(context: context) }
@@ -217,14 +203,13 @@ struct PetDetailView: View {
 
 // MARK: - Enum de tabs
 enum DetailTab: CaseIterable {
-    case upcoming, medications, vaccines, deworming, grooming, weight
+    case upcoming, medications, vaccines, grooming, weight
     
     var title: String {
         switch self {
         case .upcoming:     return "Próximos"
         case .medications:  return "Medicamentos"
         case .vaccines:     return "Vacunas"
-        case .deworming:    return "Desparasitación"
         case .grooming:     return "Grooming"
         case .weight:       return "Peso"
 
@@ -238,7 +223,6 @@ extension DetailTab {
         case .medications:  return .medication
         case .vaccines:     return .vaccine
         case .grooming:     return .grooming
-        case .deworming:    return .deworming
         case .weight:       return .weight
         default:            return .medication   // Upcoming u otra
         }
@@ -256,11 +240,6 @@ private func ageString(for birth: Date?) -> String? {
     }
 }
 
-
-
-
-
-
 // MARK: - Preview
 
 #Preview {
@@ -274,5 +253,5 @@ private func ageString(for birth: Date?) -> String? {
         color: "White"
     )
     PetDetailView(pet: samplePet)
-   
 }
+

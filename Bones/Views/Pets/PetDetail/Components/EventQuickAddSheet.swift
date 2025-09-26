@@ -5,12 +5,12 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 // MARK: - Tipos de evento
 enum EventKind: String, CaseIterable, Identifiable {
     case medication  = "Medicamento"
     case vaccine     = "Vacuna"
-    case deworming   = "Desparasitación"
     case grooming    = "Grooming"
     case weight      = "Peso"
     
@@ -19,7 +19,6 @@ enum EventKind: String, CaseIterable, Identifiable {
         switch self {
         case .medication: "pills.fill"
         case .vaccine:    "syringe"
-        case .deworming:  "bandage.fill"
         case .grooming:   "scissors"
         case .weight:     "scalemass"
         }
@@ -80,9 +79,18 @@ struct EventQuickAddSheet: View {
     
     // Grooming
     @State private var location = ""
+    @State private var selectedServices: Set<GroomingService> = []
+    @State private var priceText: String = ""
     
     // Peso
-    @State private var weightKg = ""
+    enum WeightUnit: String, CaseIterable, Identifiable { case kg = "kg", lb = "lb"; var id: Self { self } }
+    @State private var weightText = ""
+    @State private var weightUnit: WeightUnit = .kg
+    @State private var weightNotes = ""
+    
+    // Mostrar botón “Ahora” solo si el usuario cambió la fecha en Peso
+    @State private var weightDateDirty = false
+    @State private var isSettingEventDateProgrammatically = false
     
     // Programación futura
     @State private var scheduleEnabled = false
@@ -122,10 +130,10 @@ struct EventQuickAddSheet: View {
     // Manual (fechas adicionales)
     @State private var vaccineDoses: [VaccineDose] = []
     
-    // — Desparasitación —
-    @State private var dewormIntervalVal = 1
-    @State private var dewormIntervalUnit: IntervalUnit = .months
-    @State private var endDate = Calendar.current.date(byAdding: .month, value: 6, to: Date())!
+    // Moneda local (para mostrar en el campo de precio)
+    private var currencyCode: String {
+        Locale.current.currency?.identifier ?? "USD"
+    }
     
     var body: some View {
         NavigationStack {
@@ -138,30 +146,72 @@ struct EventQuickAddSheet: View {
                 
                 // ---------- Fecha ----------
                 Section("Fecha") {
-                    DatePicker("Primera dosis",
+                    let dateLabel: String = {
+                        switch kind {
+                        case .medication, .vaccine: return "Primera dosis"
+                        case .grooming, .weight:    return "Fecha y hora"
+                        }
+                    }()
+                    DatePicker(dateLabel,
                                selection: $eventDate,
                                displayedComponents: [.date, .hourAndMinute])
+                    if kind == .weight && weightDateDirty {
+                        Button("Ahora") {
+                            let gen = UIImpactFeedbackGenerator(style: .light)
+                            gen.impactOccurred()
+                            isSettingEventDateProgrammatically = true
+                            eventDate = Date()
+                            weightDateDirty = false
+                            isSettingEventDateProgrammatically = false
+                        }
+                        .buttonStyle(.borderless)
+                        .tint(.blue) // azul clásico
+                    }
                 }
                 
                 // ---------- Programación futura ----------
                 futureScheduleSection
+                
+                // ---------- Validación Peso ----------
+                if kind == .weight, let warning = validationMessageWeight() {
+                    Section {
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                            .font(.footnote)
+                    }
+                }
             }
             .navigationTitle("Nuevo evento")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancelar", action: dismiss.callAsFunction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Guardar") { saveEvent() }
-                        .disabled(kind != .weight && title.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(saveDisabled)
                 }
             }
             .onAppear {
-                if kind == .vaccine && vaccineMode == .manual && vaccineDoses.isEmpty {
-                    if let m1 = Calendar.current.date(byAdding: .month, value: 1,
-                                                      to: eventDate) {
-                        vaccineDoses = [VaccineDose(date: m1)]
-                    }
+                if kind == .weight { prefillWeight() }
+            }
+            .onChange(of: kind) { _, newKind in
+                if newKind == .weight { prefillWeight() }
+            }
+            .onChange(of: eventDate) { _, _ in
+                // Marcar “sucia” solo cuando el usuario cambie la fecha en Peso
+                if kind == .weight && !isSettingEventDateProgrammatically {
+                    weightDateDirty = true
                 }
             }
+        }
+    }
+    
+    private var saveDisabled: Bool {
+        if kind == .weight {
+            return !canSaveWeight()
+        } else if kind == .grooming {
+            let descEmpty = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return descEmpty && selectedServices.isEmpty
+        } else {
+            return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 }
@@ -191,30 +241,104 @@ private extension EventQuickAddSheet {
         switch kind {
         case .medication:
             TextField("Nombre del medicamento", text: $title)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.sentences)
             TextField("Dosis (ej. 10 mg)", text: $dosage)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.never)
         case .vaccine:
             TextField("Nombre de la vacuna", text: $title)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.sentences)
             TextField("Fabricante", text: $manufacturer)
-        case .deworming:
-            TextField("Descripción", text: $title)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.sentences)
         case .grooming:
-            TextField("Descripción", text: $title)
-            TextField("Lugar", text: $location)
+            TextField("Descripción (opcional)", text: $title)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.sentences)
+            TextField("Lugar (opcional)", text: $location)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.sentences)
+            
+            // Precio (opcional)
+            HStack {
+                TextField("Precio (opcional)", text: $priceText)
+                    .keyboardType(.decimalPad)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                Text(currencyCode)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // ---------- Servicios ----------
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Servicios")
+                    .font(.headline)
+                ForEach(GroomingService.allCases) { service in
+                    Toggle(service.displayName, isOn: binding(for: service))
+                        .toggleStyle(.switch)
+                }
+                if !selectedServices.isEmpty {
+                    Button("Limpiar selección", role: .destructive) {
+                        selectedServices.removeAll()
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
         case .weight:
-            TextField("Peso (kg)", text: $weightKg)
-                .keyboardType(.decimalPad)
+            VStack(alignment: .leading, spacing: 8) {
+                // Medición
+                HStack {
+                    TextField("Peso", text: $weightText)
+                        .keyboardType(.decimalPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                    
+                    Picker("", selection: $weightUnit) {
+                        ForEach(WeightUnit.allCases) { u in
+                            Text(u.rawValue).tag(u)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 120)
+                }
+                
+                HStack {
+                    Button {
+                        adjustWeight(-0.1)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    
+                    Spacer()
+                    
+                    Button {
+                        adjustWeight(+0.1)
+                    } label: {
+                        Image(systemName: "plus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                }
+                
+                // Notas
+                TextField("Notas (opcional)", text: $weightNotes, axis: .vertical)
+                    .lineLimit(1...4)
+                    .autocorrectionDisabled(true)
+                    .textInputAutocapitalization(.sentences)
+            }
         }
     }
     
     @ViewBuilder var futureScheduleSection: some View {
-        if kind == .medication || kind == .vaccine || kind == .deworming {
+        if kind == .medication || kind == .vaccine {
             Section {
                 Toggle("Programar próximas dosis", isOn: $scheduleEnabled)
                 
                 if scheduleEnabled {
                     if kind == .medication { medicationControls }
                     if kind == .vaccine   { vaccineControls }
-                    if kind == .deworming { dewormControls }
                 }
             }
         }
@@ -243,6 +367,19 @@ private extension EventQuickAddSheet {
             } else {
                 Stepper("\(timesPerDay) × por día", value: $timesPerDay, in: 1...12)
                 Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...30)
+            }
+            
+            // Previsualización detallada (ambos modos)
+            if let medDates = medicationPreview(
+                start: eventDate,
+                mode: scheduleMode,
+                intervalValue: intervalValue,
+                intervalUnit: intervalUnit,
+                durationDays: durationDays,
+                timesPerDay: timesPerDay
+            ), medDates.count > 1 {
+                MedicationPreviewView(dates: medDates)
+                    .padding(.top, 4)
             }
         }
     }
@@ -331,26 +468,6 @@ private extension EventQuickAddSheet {
     
     private func index(of id: UUID) -> Int {
         vaccineDoses.firstIndex { $0.id == id } ?? 0
-    }
-    
-    // ---- Desparasitación ----
-    var dewormControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            IntervalRow(value: $dewormIntervalVal, unit: $dewormIntervalUnit)
-            DatePicker("Hasta", selection: $endDate, displayedComponents: .date)
-            
-            // Resumen en vivo para desparasitación
-            if let summary = dewormingSummary(
-                start: eventDate,
-                end: endDate,
-                stepValue: dewormIntervalVal,
-                stepUnit: dewormIntervalUnit
-            ) {
-                Text("Se crearán \(summary.total) dosis en total. Última: \(summary.last.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
     
     // Chips de modo (medicamentos)
@@ -453,10 +570,42 @@ private struct VaccinePreviewView: View {
     }
 }
 
+// MARK: - Previsualización de medicamentos
+private struct MedicationPreviewView: View {
+    let dates: [Date]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Previsualización").font(.headline)
+            ForEach(Array(dates.enumerated()), id: \.offset) { idx, d in
+                HStack {
+                    Text("Dosis \(idx + 1)")
+                    Spacer()
+                    Text(d.formatted(date: .abbreviated, time: .shortened))
+                }
+                .font(.caption)
+            }
+        }
+    }
+}
+
 // MARK: - Guardado
 extension EventQuickAddSheet {
     
     private func saveEvent() {
+        if kind == .weight {
+            // Guardar peso (idéntico a la pestaña Peso)
+            guard let val = parseLocalizedDouble(weightText) else { return }
+            let kg = weightUnit == .kg ? val : val * 0.45359237
+            let w = WeightEntry(date: eventDate, pet: pet, weightKg: kg, notes: weightNotes.isEmpty ? nil : weightNotes)
+            context.insert(w)
+            try? context.save()
+            NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+            let gen = UINotificationFeedbackGenerator()
+            gen.notificationOccurred(.success)
+            dismiss()
+            return
+        }
+        
         let primary = insertEvent(on: eventDate, doseLabel: nil)
         if scheduleEnabled { scheduleFuture(from: primary) }
         try? context.save()
@@ -485,24 +634,29 @@ extension EventQuickAddSheet {
             notify(id: v.id, title: "Vacuna",
                    body: "\(pet.name) – \(title)", at: date)
             return v
-        case .deworming:
-            let d = Deworming(date: date, pet: pet, notes: title)
-            context.insert(d)
-            notify(id: d.id, title: "Desparasitación",
-                   body: pet.name, at: date)
-            return d
         case .grooming:
+            let notes = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : title
+            let loc = location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : location
+            let services = Array(selectedServices)
+            let price = parseLocalizedDouble(priceText)
             let g = Grooming(date: date, pet: pet,
-                             location: location, notes: title)
+                             location: loc, notes: notes, services: services, totalPrice: price)
             context.insert(g)
+            // Notificación: prioriza servicios; si no hay, usa descripción
+            let bodyText: String = {
+                if !services.isEmpty {
+                    return services.map { $0.displayName }.joined(separator: ", ")
+                } else {
+                    return notes ?? pet.name
+                }
+            }()
             notify(id: g.id, title: "Grooming",
-                   body: pet.name, at: date)
+                   body: "\(pet.name) – \(bodyText)", at: date)
             return g
         case .weight:
-            let kg = Double(weightKg) ?? 0
-            let w = WeightEntry(date: date, pet: pet, weightKg: kg)
-            context.insert(w)
-            return w
+            // No se usa aquí; el guardado de peso se maneja arriba
+            let g = Grooming(date: date, pet: pet, location: nil, notes: "")
+            return g
         }
     }
     
@@ -600,13 +754,8 @@ extension EventQuickAddSheet {
                     insertEvent(on: dose.date, doseLabel: nil)
                 }
             }
-        case .deworming:
-            while true {
-                next = add(dewormIntervalVal, dewormIntervalUnit, to: next)
-                if next > endDate { break }
-                insertEvent(on: next, doseLabel: nil)
-            }
-        default: break
+        case .grooming, .weight:
+            break
         }
     }
     
@@ -616,109 +765,136 @@ extension EventQuickAddSheet {
     }
 }
 
-// MARK: - Helpers de cálculo (resumen en UI y vacunas)
+// MARK: - Helpers de cálculo y validación
 private extension EventQuickAddSheet {
-    // Medicamentos por intervalo (duración en días)
-    func intervalSummary(start: Date,
-                         durationDays: Int,
-                         stepValue: Int,
-                         stepUnit: IntervalUnit) -> (total: Int, last: Date)? {
-        guard durationDays > 0, stepValue > 0 else { return nil }
-        let cal = Calendar.current
-        let end = cal.date(byAdding: .day, value: durationDays, to: start)!
-        
-        var count = 1 // incluye la primera
-        var last = start
-        while true {
-            let next = {
-                switch stepUnit {
-                case .hours:  cal.date(byAdding: .hour, value: stepValue, to: last)!
-                case .days:   cal.date(byAdding: .day, value: stepValue, to: last)!
-                case .weeks:  cal.date(byAdding: .day, value: 7 * stepValue, to: last)!
-                case .months: cal.date(byAdding: .month, value: stepValue, to: last)!
-                }
-            }()
-            if next > end { break }
-            count += 1
-            last = next
+    func prefillWeight() {
+        // Prefill con último peso de la mascota (igual que en la tab)
+        let petID = pet.id
+        let predicate = #Predicate<WeightEntry> { $0.pet?.id == petID }
+        var desc = FetchDescriptor<WeightEntry>(predicate: predicate)
+        desc.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        let last = (try? context.fetch(desc))?.first
+        if let w = last?.weightKg {
+            let value = weightUnit == .kg ? w : (w / 0.45359237)
+            weightText = String(format: "%.1f", value)
+        } else {
+            weightText = ""
         }
-        return (count, last)
+        isSettingEventDateProgrammatically = true
+        eventDate = Date()
+        weightDateDirty = false
+        isSettingEventDateProgrammatically = false
+        weightNotes = ""
     }
     
-    // Desparasitación (fecha fin exacta)
-    func dewormingSummary(start: Date,
-                          end: Date,
-                          stepValue: Int,
-                          stepUnit: IntervalUnit) -> (total: Int, last: Date)? {
-        guard end > start, stepValue > 0 else { return nil }
-        let cal = Calendar.current
-        var count = 1
-        var last = start
-        while true {
-            let next = {
-                switch stepUnit {
-                case .hours:  cal.date(byAdding: .hour, value: stepValue, to: last)!
-                case .days:   cal.date(byAdding: .day, value: stepValue, to: last)!
-                case .weeks:  cal.date(byAdding: .day, value: 7 * stepValue, to: last)!
-                case .months: cal.date(byAdding: .month, value: stepValue, to: last)!
-                }
-            }()
-            if next > end { break }
-            count += 1
-            last = next
-        }
-        return (count, last)
+    func adjustWeight(_ delta: Double) {
+        let current = parseLocalizedDouble(weightText) ?? 0
+        let newVal = max(0, (current + delta)).rounded(toPlaces: 1)
+        weightText = String(format: "%.1f", newVal)
     }
     
-    // Vacunas: generar una serie de N dosis con separación
+    func speciesRange() -> (min: Double, max: Double) {
+        switch pet.species {
+        case .perro: return (0.5, 120.0)
+        case .gato:  return (0.5, 15.0)
+        }
+    }
+    
+    func canSaveWeight() -> Bool {
+        guard let val = parseLocalizedDouble(weightText), val > 0 else { return false }
+        let (minV, maxV) = speciesRange()
+        let kg = weightUnit == .kg ? val : val * 0.45359237
+        return kg >= minV && kg <= maxV
+    }
+    
+    func validationMessageWeight() -> String? {
+        guard let val = parseLocalizedDouble(weightText), val > 0 else {
+            return "Introduce un peso válido mayor que 0."
+        }
+        let (minV, maxV) = speciesRange()
+        let kg = weightUnit == .kg ? val : val * 0.45359237
+        if kg < minV || kg > maxV {
+            return "Valor fuera de rango para \(pet.species == .perro ? "perro" : "gato"): \(String(format: "%.1f", minV))–\(String(format: "%.1f", maxV)) kg."
+        }
+        return nil
+    }
+    
+    func parseLocalizedDouble(_ s: String) -> Double? {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        let nf = NumberFormatter()
+        nf.locale = .current
+        nf.numberStyle = .decimal
+        if let n = nf.number(from: trimmed) {
+            return n.doubleValue
+        }
+        let dot = trimmed.replacingOccurrences(of: ",", with: ".")
+        return Double(dot)
+    }
+    
+    // MARK: - Selección de servicios (Grooming)
+    func binding(for service: GroomingService) -> Binding<Bool> {
+        Binding(
+            get: { selectedServices.contains(service) },
+            set: { isOn in
+                if isOn { selectedServices.insert(service) }
+                else { selectedServices.remove(service) }
+            }
+        )
+    }
+    
+    // MARK: - Generadores de fechas y previsualizaciones
+    
+    // Agrega un intervalo a una fecha según la unidad
+    func addInterval(_ value: Int, unit: IntervalUnit, to date: Date) -> Date {
+        let cal = Calendar.current
+        switch unit {
+        case .hours:
+            return cal.date(byAdding: .hour, value: value, to: date) ?? date
+        case .days:
+            return cal.date(byAdding: .day, value: value, to: date) ?? date
+        case .weeks:
+            return cal.date(byAdding: .day, value: 7 * value, to: date) ?? date
+        case .months:
+            return cal.date(byAdding: .month, value: value, to: date) ?? date
+        }
+    }
+    
+    // Serie de vacunas (incluye la fecha inicial). 'count' mínimo 1.
     func generateSeries(start: Date,
                         count: Int,
                         spacingValue: Int,
                         spacingUnit: IntervalUnit) -> [Date] {
-        let cal = Calendar.current
-        guard count >= 1 else { return [] }
-        var dates = [start]
-        var last = start
-        for _ in 1..<count {
-            let next: Date
-            switch spacingUnit {
-            case .hours:  next = cal.date(byAdding: .hour, value: spacingValue, to: last)!
-            case .days:   next = cal.date(byAdding: .day, value: spacingValue, to: last)!
-            case .weeks:  next = cal.date(byAdding: .day, value: 7 * spacingValue, to: last)!
-            case .months: next = cal.date(byAdding: .month, value: spacingValue, to: last)!
+        let c = max(1, count)
+        var dates: [Date] = [start]
+        var current = start
+        if c > 1 {
+            for _ in 1..<c {
+                current = addInterval(spacingValue, unit: spacingUnit, to: current)
+                dates.append(current)
             }
-            dates.append(next)
-            last = next
         }
         return dates
     }
     
-    // Vacunas: fechas de inicio de cada refuerzo
+    // Fechas de inicio de refuerzos (solo las fechas de arranque de cada ronda)
     func generateBoosterStarts(start: Date,
                                rounds: Int,
                                freqValue: Int,
                                freqUnit: IntervalUnit) -> [Date] {
-        let cal = Calendar.current
-        guard rounds >= 1 else { return [] }
+        guard rounds > 0 else { return [] }
         var starts: [Date] = []
-        var last = start
+        var current = start
         for _ in 0..<rounds {
-            let next: Date
-            switch freqUnit {
-            case .hours:  next = cal.date(byAdding: .hour, value: freqValue, to: last)!
-            case .days:   next = cal.date(byAdding: .day, value: freqValue, to: last)!
-            case .weeks:  next = cal.date(byAdding: .day, value: 7 * freqValue, to: last)!
-            case .months: next = cal.date(byAdding: .month, value: freqValue, to: last)!
-            }
-            starts.append(next)
-            last = next
+            current = addInterval(freqValue, unit: freqUnit, to: current)
+            starts.append(current)
         }
         return starts
     }
     
-    // Vacunas: previsualización combinada
+    // Previsualización de vacunas (serie + refuerzos)
     func vaccinePreview(start: Date,
-                        seriesCount: Int, // "extra"
+                        seriesCount: Int,
                         seriesSpacingValue: Int,
                         seriesSpacingUnit: IntervalUnit,
                         boostersEnabled: Bool,
@@ -726,12 +902,12 @@ private extension EventQuickAddSheet {
                         boosterFreqUnit: IntervalUnit,
                         boosterRounds: Int,
                         boosterIncludesSeries: Bool) -> VaccinePreview? {
-        // Convertimos "extra" a "total" sumando la inicial
-        let totalSeriesCount = max(1, seriesCount + 1)
+        // Serie actual: seriesCount es "extra", por eso sumamos 1 para incluir la inicial
         let series = generateSeries(start: start,
-                                    count: totalSeriesCount,
+                                    count: max(1, seriesCount + 1),
                                     spacingValue: seriesSpacingValue,
                                     spacingUnit: seriesSpacingUnit)
+        
         var rounds: [[Date]] = []
         if boostersEnabled {
             let starts = generateBoosterStarts(start: start,
@@ -740,16 +916,80 @@ private extension EventQuickAddSheet {
                                                freqUnit: boosterFreqUnit)
             for s in starts {
                 if boosterIncludesSeries {
-                    rounds.append(generateSeries(start: s,
-                                                 count: totalSeriesCount,
-                                                 spacingValue: seriesSpacingValue,
-                                                 spacingUnit: seriesSpacingUnit))
+                    let r = generateSeries(start: s,
+                                           count: max(1, seriesCount + 1),
+                                           spacingValue: seriesSpacingValue,
+                                           spacingUnit: seriesSpacingUnit)
+                    rounds.append(r)
                 } else {
                     rounds.append([s])
                 }
             }
         }
+        
         return VaccinePreview(seriesDates: series, boosterRounds: rounds)
+    }
+    
+    // Previsualización/Resumen de medicamentos (ambos modos)
+    func medicationPreview(start: Date,
+                           mode: ScheduleMode,
+                           intervalValue: Int,
+                           intervalUnit: IntervalUnit,
+                           durationDays: Int,
+                           timesPerDay: Int) -> [Date]? {
+        let cal = Calendar.current
+        switch mode {
+        case .interval:
+            let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
+            var dates: [Date] = [start]
+            var current = start
+            while true {
+                let next = addInterval(intervalValue, unit: intervalUnit, to: current)
+                if next > end { break }
+                dates.append(next)
+                current = next
+            }
+            return dates
+        case .perDay:
+            // Replica la lógica de scheduleFuture para que coincida
+            let total = max(1, timesPerDay * durationDays)
+            let stepHours = Int((24.0 / max(1.0, Double(timesPerDay))).rounded())
+            var dates: [Date] = [start]
+            var current = start
+            if total > 1 {
+                for _ in 1..<total {
+                    current = cal.date(byAdding: .hour, value: stepHours, to: current) ?? current
+                    dates.append(current)
+                }
+            }
+            return dates
+        }
+    }
+    
+    func intervalSummary(start: Date,
+                         durationDays: Int,
+                         stepValue: Int,
+                         stepUnit: IntervalUnit) -> (total: Int, last: Date)? {
+        let cal = Calendar.current
+        let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
+        var current = start
+        var last = start
+        var count = 1
+        while true {
+            let next = addInterval(stepValue, unit: stepUnit, to: current)
+            if next > end { break }
+            last = next
+            count += 1
+            current = next
+        }
+        return (count, last)
+    }
+}
+
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let p = pow(10.0, Double(places))
+        return (self * p).rounded() / p
     }
 }
 

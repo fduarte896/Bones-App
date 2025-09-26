@@ -102,7 +102,7 @@ private extension EventDetailView {
     }
     
     func startDelete(for med: Medication) {
-        let count = max(0, futureMedications(from: med).count - 1)
+        let count = max(0, DoseSeries.futureMedications(from: med, in: context).count - 1)
         if count == 0 {
             deleteSingle(event: med)
         } else {
@@ -111,7 +111,7 @@ private extension EventDetailView {
         }
     }
     func startDelete(for vac: Vaccine) {
-        let count = max(0, futureVaccines(from: vac).count - 1)
+        let count = max(0, DoseSeries.futureVaccines(from: vac, in: context).count - 1)
         if count == 0 {
             deleteSingle(event: vac)
         } else {
@@ -120,7 +120,7 @@ private extension EventDetailView {
         }
     }
     func startDelete(for dew: Deworming) {
-        let count = max(0, futureDewormings(from: dew).count - 1)
+        let count = max(0, DoseSeries.futureDewormings(from: dew, in: context).count - 1)
         if count == 0 {
             deleteSingle(event: dew)
         } else {
@@ -132,17 +132,17 @@ private extension EventDetailView {
     func deleteThisAndFuture() {
         switch event {
         case let med as Medication:
-            for m in futureMedications(from: med) {
+            for m in DoseSeries.futureMedications(from: med, in: context) {
                 NotificationManager.shared.cancelNotification(id: m.id)
                 context.delete(m)
             }
         case let vac as Vaccine:
-            for v in futureVaccines(from: vac) {
+            for v in DoseSeries.futureVaccines(from: vac, in: context) {
                 NotificationManager.shared.cancelNotification(id: v.id)
                 context.delete(v)
             }
         case let dew as Deworming:
-            for d in futureDewormings(from: dew) {
+            for d in DoseSeries.futureDewormings(from: dew, in: context) {
                 NotificationManager.shared.cancelNotification(id: d.id)
                 context.delete(d)
             }
@@ -158,65 +158,6 @@ private extension EventDetailView {
     func clearPending() {
         pendingFutureCount = 0
         showingDeleteDialog = false
-    }
-}
-
-// MARK: - Future series helpers (mismo criterio que la lista)
-private extension EventDetailView {
-    func futureMedications(from med: Medication) -> [Medication] {
-        guard let petID = med.pet?.id else { return [med] }
-        let base = splitDose(from: med.name).base
-        let start = med.date
-        let predicate = #Predicate<Medication> { m in
-            m.pet?.id == petID && m.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
-        return fetched.filter { splitDose(from: $0.name).base == base }
-    }
-    
-    func futureVaccines(from vac: Vaccine) -> [Vaccine] {
-        guard let petID = vac.pet?.id else { return [vac] }
-        let base = splitDose(from: vac.vaccineName).base
-        let start = vac.date
-        let predicate = #Predicate<Vaccine> { v in
-            v.pet?.id == petID && v.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Vaccine>(predicate: predicate))) ?? []
-        return fetched.filter { splitDose(from: $0.vaccineName).base == base }
-    }
-    
-    func futureDewormings(from dew: Deworming) -> [Deworming] {
-        guard let petID = dew.pet?.id else { return [dew] }
-        func norm(_ s: String?) -> String {
-            (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        }
-        let baseNotes = norm(dew.notes)
-        let start = dew.date
-        let predicate = #Predicate<Deworming> { d in
-            d.pet?.id == petID && d.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))) ?? []
-        return fetched.filter { norm($0.notes) == baseNotes }
-    }
-    
-    // split de " (dosis X/Y)" al final
-    func splitDose(from name: String) -> (base: String, dose: String?) {
-        guard name.hasSuffix(")"),
-              let markerRange = name.range(of: " (dosis ", options: [.backwards]) else {
-            return (name, nil)
-        }
-        let openParenIndex = name.index(markerRange.lowerBound, offsetBy: 1)
-        let closingParenIndex = name.index(before: name.endIndex)
-        guard closingParenIndex > openParenIndex else { return (name, nil) }
-        let contentStart = name.index(after: openParenIndex)
-        let inside = String(name[contentStart..<closingParenIndex])
-        if inside.lowercased().hasPrefix("dosis ") {
-            let base = String(name[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-            let dose = inside.replacingOccurrences(of: "dosis", with: "Dosis", options: [.anchored, .caseInsensitive])
-            return (base, dose)
-        } else {
-            return (name, nil)
-        }
     }
 }
 
@@ -236,8 +177,17 @@ private struct MedicationDetailView: View {
                     .onChange(of: med.name) { _, _ in save() }
                 TextField("Dosis", text: $med.dosage)
                     .onChange(of: med.dosage) { _, _ in save() }
-                TextField("Frecuencia", text: $med.frequency)
-                    .onChange(of: med.frequency) { _, _ in save() }
+                
+                // Frecuencia inferida (solo lectura)
+                let fallback = med.frequency.trimmingCharacters(in: .whitespacesAndNewlines)
+                let inferred = inferredFrequency(for: med)
+                let display = inferred ?? (fallback.isEmpty ? "No determinada" : fallback)
+                LabeledContent("Frecuencia") {
+                    Text(display).foregroundStyle(.secondary)
+                }
+                Text("Se infiere automáticamente a partir de la programación.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             
             Section("Fecha") {
@@ -276,6 +226,88 @@ private struct MedicationDetailView: View {
         let body = "\(e.pet?.name ?? "") – \(e.displayName)"
         NotificationManager.shared.scheduleNotification(id: e.id, title: title, body: body, fireDate: e.date, advance: 0)
         save()
+    }
+    
+    // MARK: - Frecuencia inferida (igual criterio que en la lista)
+    private func inferredFrequency(for med: Medication) -> String? {
+        // 1) RRULE si existe
+        if let rule = med.rrule, let fromRule = format(rrule: rule) {
+            return fromRule
+        }
+        // 2) Intervalo entre tomas de la misma serie (mismo base)
+        guard let petID = med.pet?.id else { return nil }
+        let base = DoseSeries.splitDoseBase(from: med.name)
+        
+        let predicate = #Predicate<Medication> { $0.pet?.id == petID }
+        let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
+        let siblings = fetched.filter { DoseSeries.splitDoseBase(from: $0.name) == base }
+                              .sorted { $0.date < $1.date }
+        guard !siblings.isEmpty else { return nil }
+        
+        if let idx = siblings.firstIndex(where: { $0.id == med.id }) {
+            if idx + 1 < siblings.count {
+                let interval = siblings[idx + 1].date.timeIntervalSince(med.date)
+                if interval > 0 { return format(interval: interval) }
+            }
+            if idx > 0 {
+                let interval = med.date.timeIntervalSince(siblings[idx - 1].date)
+                if interval > 0 { return format(interval: interval) }
+            }
+        } else if let nearest = siblings.min(by: {
+            abs($0.date.timeIntervalSince(med.date)) < abs($1.date.timeIntervalSince(med.date))
+        }) {
+            let interval = abs(nearest.date.timeIntervalSince(med.date))
+            if interval > 0 { return format(interval: interval) }
+        }
+        return nil
+    }
+    
+    private func format(rrule: String) -> String? {
+        let parts = rrule
+            .split(separator: ";")
+            .map { $0.split(separator: "=").map(String.init) }
+            .reduce(into: [String: String]()) { dict, kv in
+                if kv.count == 2 { dict[kv[0].uppercased()] = kv[1].uppercased() }
+            }
+        guard let freq = parts["FREQ"] else { return nil }
+        let interval = Int(parts["INTERVAL"] ?? "1") ?? 1
+        
+        switch freq {
+        case "HOURLY":
+            return "cada \(interval) h"
+        case "DAILY":
+            return interval == 1 ? "cada día" : "cada \(interval) días"
+        case "WEEKLY":
+            return interval == 1 ? "cada semana" : "cada \(interval) semanas"
+        case "MONTHLY":
+            return interval == 1 ? "cada mes" : "cada \(interval) meses"
+        default:
+            return nil
+        }
+    }
+    
+    private func format(interval: TimeInterval) -> String {
+        let hour: Double = 3600
+        let day: Double = 24 * hour
+        let week: Double = 7 * day
+        let month: Double = 30 * day
+        
+        if interval < 1.5 * day {
+            let hours = interval / hour
+            let canonical: [Double] = [4, 6, 8, 12, 24]
+            let nearest = canonical.min(by: { abs($0 - hours) < abs($1 - hours) }) ?? round(hours)
+            let h = Int(nearest.rounded())
+            return h == 24 ? "cada día" : "cada \(h) h"
+        } else if interval < 2 * week {
+            let days = Int((interval / day).rounded())
+            return days == 1 ? "cada día" : "cada \(days) días"
+        } else if interval < 2 * month {
+            let weeks = Int((interval / week).rounded())
+            return weeks <= 1 ? "cada semana" : "cada \(weeks) semanas"
+        } else {
+            let months = Int((interval / month).rounded())
+            return months <= 1 ? "cada mes" : "cada \(months) meses"
+        }
     }
 }
 
@@ -385,15 +417,46 @@ private struct GroomingDetailView: View {
     var onDelete: () -> Void
     @Environment(\.modelContext) private var context
     
+    private var currencyCode: String {
+        Locale.current.currency?.identifier ?? "USD"
+    }
+    
     var body: some View {
         Form {
-            Header(pet: groom.pet, title: groom.notes?.isEmpty == false ? groom.notes! : "Cita de grooming", icon: "scissors", isCompleted: groom.isCompleted, date: groom.date)
+            Header(pet: groom.pet,
+                   title: groom.displayName,
+                   icon: "scissors",
+                   isCompleted: groom.isCompleted,
+                   date: groom.date)
             
+            // Selección de servicios
+            Section("Servicios") {
+                ForEach(GroomingService.allCases) { service in
+                    Toggle(service.displayName, isOn: Binding(
+                        get: { groom.services.contains(service) },
+                        set: { isOn in
+                            if isOn {
+                                if !groom.services.contains(service) {
+                                    groom.services.append(service)
+                                }
+                            } else {
+                                groom.services.removeAll { $0 == service }
+                            }
+                            save()
+                        }
+                    ))
+                }
+            }
+            
+            // Lugar y precio
             Section("Información") {
                 TextField("Lugar", text: Binding($groom.location, replacingNilWith: ""))
                     .onChange(of: groom.location) { _, _ in save() }
-                TextField("Descripción", text: Binding($groom.notes, replacingNilWith: ""))
-                    .onChange(of: groom.notes) { _, _ in save() }
+                
+                TextField("Precio total", value: Binding($groom.totalPrice, replacingNilWith: 0),
+                          format: .currency(code: currencyCode))
+                    .keyboardType(.decimalPad)
+                    .onChange(of: groom.totalPrice) { _, _ in save() }
             }
             
             Section("Fecha") {
@@ -611,6 +674,15 @@ private extension Binding where Value == String {
     }
 }
 
+private extension Binding where Value == Double {
+    init(_ source: Binding<Double?>, replacingNilWith placeholder: Double) {
+        self.init(
+            get: { source.wrappedValue ?? placeholder },
+            set: { newValue in source.wrappedValue = newValue }
+        )
+    }
+}
+
 // MARK: - Viewer con zoom para la imagen de prescripción
 private struct ZoomableImageView: View {
     let image: UIImage
@@ -650,24 +722,14 @@ private struct ZoomableImageView: View {
 
 // MARK: - Propagación a toda la serie
 
-// Base del nombre sin sufijo " (dosis X/Y)"
-private func splitDoseBase(from name: String) -> String {
-    guard name.hasSuffix(")"),
-          let markerRange = name.range(of: " (dosis ", options: [.backwards]) else {
-        return name
-    }
-    let base = String(name[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-    return base
-}
-
 private func propagatePrescriptionForMedication(_ med: Medication, with data: Data?, in context: ModelContext) {
     guard let petID = med.pet?.id else { return }
-    let base = splitDoseBase(from: med.name)
+    let base = DoseSeries.splitDoseBase(from: med.name)
     let predicate = #Predicate<Medication> { m in
         m.pet?.id == petID
     }
     let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
-    let siblings = fetched.filter { splitDoseBase(from: $0.name) == base }
+    let siblings = fetched.filter { DoseSeries.splitDoseBase(from: $0.name) == base }
     for s in siblings {
         s.prescriptionImageData = data
     }
@@ -677,12 +739,12 @@ private func propagatePrescriptionForMedication(_ med: Medication, with data: Da
 
 private func propagatePrescriptionForVaccine(_ vac: Vaccine, with data: Data?, in context: ModelContext) {
     guard let petID = vac.pet?.id else { return }
-    let base = splitDoseBase(from: vac.vaccineName)
+    let base = DoseSeries.splitDoseBase(from: vac.vaccineName)
     let predicate = #Predicate<Vaccine> { v in
         v.pet?.id == petID
     }
     let fetched = (try? context.fetch(FetchDescriptor<Vaccine>(predicate: predicate))) ?? []
-    let siblings = fetched.filter { splitDoseBase(from: $0.vaccineName) == base }
+    let siblings = fetched.filter { DoseSeries.splitDoseBase(from: $0.vaccineName) == base }
     for s in siblings {
         s.prescriptionImageData = data
     }
@@ -692,15 +754,12 @@ private func propagatePrescriptionForVaccine(_ vac: Vaccine, with data: Data?, i
 
 private func propagatePrescriptionForDeworming(_ dew: Deworming, with data: Data?, in context: ModelContext) {
     guard let petID = dew.pet?.id else { return }
-    func norm(_ s: String?) -> String {
-        (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-    let baseNotes = norm(dew.notes)
+    let baseNotes = DoseSeries.normalizeNotes(dew.notes)
     let predicate = #Predicate<Deworming> { d in
         d.pet?.id == petID
     }
     let fetched = (try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))) ?? []
-    let siblings = fetched.filter { norm($0.notes) == baseNotes }
+    let siblings = fetched.filter { DoseSeries.normalizeNotes($0.notes) == baseNotes }
     for s in siblings {
         s.prescriptionImageData = data
     }
@@ -736,9 +795,22 @@ private enum EventDetailPreviewData {
                          pet: pet,
                          name: "Amoxicilina (dosis 1/3)",
                          dosage: "250 mg",
-                         frequency: "cada 8 h",
+                         frequency: "",
                          notes: "Tomar con comida")
+    // Creamos futuras tomas para que la inferencia muestre “cada 8 h”
+    let med2 = Medication(date: Date().addingTimeInterval(3600*9),
+                          pet: pet,
+                          name: "Amoxicilina (dosis 2/3)",
+                          dosage: "250 mg",
+                          frequency: "")
+    let med3 = Medication(date: Date().addingTimeInterval(3600*17),
+                          pet: pet,
+                          name: "Amoxicilina (dosis 3/3)",
+                          dosage: "250 mg",
+                          frequency: "")
     ctx.insert(med)
+    ctx.insert(med2)
+    ctx.insert(med3)
     try? ctx.save()
     
     return NavigationStack {
@@ -797,7 +869,9 @@ private enum EventDetailPreviewData {
     let groom = Grooming(date: Date().addingTimeInterval(3*24*3600),
                          pet: pet,
                          location: "Pet Spa",
-                         notes: "Baño y corte")
+                         notes: "Baño y corte",
+                         services: [.bano, .cortePelo, .corteUnas],
+                         totalPrice: 550.0)
     ctx.insert(groom)
     try? ctx.save()
     
@@ -826,3 +900,4 @@ private enum EventDetailPreviewData {
     }
     .modelContainer(container)
 }
+

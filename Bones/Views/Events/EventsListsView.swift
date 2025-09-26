@@ -451,7 +451,6 @@ private extension EventTypeFilter {
         case .all:         "circle.dashed"
         case .medication:  "pills"
         case .vaccine:     "syringe"
-        case .deworming:   "bandage"
         case .grooming:    "scissors"
         case .weight:      "scalemass"
         }

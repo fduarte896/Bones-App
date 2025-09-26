@@ -29,12 +29,12 @@ final class CalendarEventsViewModel: ObservableObject {
             (try? context.fetch(FetchDescriptor<T>())) ?? []
         }
         
-        let all: [any BasicEvent] =
-            fetch(Medication.self) +
-            fetch(Vaccine.self) +
-            fetch(Deworming.self) +
-            fetch(Grooming.self) +
-            fetch(WeightEntry.self)
+        var all: [any BasicEvent] = []
+        all.append(contentsOf: fetch(Medication.self).map { $0 as any BasicEvent })
+        all.append(contentsOf: fetch(Vaccine.self).map { $0 as any BasicEvent })
+        all.append(contentsOf: fetch(Deworming.self).map { $0 as any BasicEvent })
+        all.append(contentsOf: fetch(Grooming.self).map { $0 as any BasicEvent })
+        all.append(contentsOf: fetch(WeightEntry.self).map { $0 as any BasicEvent })
         
         eventsByDay = Dictionary(grouping: all) { event in
             Calendar.current.startOfDay(for: event.date)
@@ -45,3 +45,4 @@ final class CalendarEventsViewModel: ObservableObject {
         eventsByDay[Calendar.current.startOfDay(for: day)] ?? []
     }
 }
+

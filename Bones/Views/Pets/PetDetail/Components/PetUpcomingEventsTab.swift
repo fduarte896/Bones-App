@@ -12,6 +12,13 @@ struct PetUpcomingEventsTab: View {
     @ObservedObject var viewModel: PetDetailViewModel
     @Environment(\.modelContext) private var context
 
+    // Confirmación de borrado en serie
+    @State private var pendingFutureCount = 0
+    @State private var showingDeleteDialog = false
+    @State private var pendingMed: Medication?
+    @State private var pendingVac: Vaccine?
+    @State private var pendingDew: Deworming?
+
     var body: some View {
         List {
             if viewModel.groupedUpcomingEvents.isEmpty {
@@ -26,13 +33,10 @@ struct PetUpcomingEventsTab: View {
                             } label: {
                                 EventRow(event: event)
                             }
-                            // Swipe: borrar
+                            // Swipe: borrar con confirmación de serie
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    NotificationManager.shared.cancelNotification(id: event.id)
-                                    context.delete(event)
-                                    try? context.save()
-                                    viewModel.fetchEvents()
+                                    startDelete(for: event)
                                 } label: {
                                     Label("Borrar", systemImage: "trash")
                                 }
@@ -58,9 +62,50 @@ struct PetUpcomingEventsTab: View {
         .onReceive(NotificationCenter.default.publisher(for: .eventsDidChange)) { _ in
             viewModel.fetchEvents()
         }
+        .confirmationDialog(
+            "¿Eliminar también futuras dosis?",
+            isPresented: $showingDeleteDialog,
+            titleVisibility: .visible
+        ) {
+            if pendingFutureCount > 0 {
+                if let _ = pendingMed {
+                    Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
+                        deleteThisAndFutureMed()
+                    }
+                    Button("Eliminar solo esta", role: .destructive) {
+                        if let med = pendingMed { deleteSingle(med) }
+                    }
+                } else if let _ = pendingVac {
+                    Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
+                        deleteThisAndFutureVac()
+                    }
+                    Button("Eliminar solo esta", role: .destructive) {
+                        if let vac = pendingVac { deleteSingle(vac) }
+                    }
+                } else if let _ = pendingDew {
+                    Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
+                        deleteThisAndFutureDew()
+                    }
+                    Button("Eliminar solo esta", role: .destructive) {
+                        if let dew = pendingDew { deleteSingle(dew) }
+                    }
+                }
+            } else {
+                // En esta pantalla no presentamos diálogo cuando no hay futuras;
+                // startDelete() elimina directamente en ese caso.
+            }
+            Button("Cancelar", role: .cancel) { clearPending() }
+        } message: {
+            if pendingFutureCount > 0 {
+                Text("Se encontraron \(pendingFutureCount) dosis futuras relacionadas. ¿Deseas borrarlas también?")
+            } else {
+                Text("Esta acción no se puede deshacer.")
+            }
+        }
     }
 }
 
+// MARK: - Row
 private struct EventRow: View {
     let event: any BasicEvent
     
@@ -116,9 +161,91 @@ private struct EventRow: View {
     }
 }
 
-
-
-//#Preview {
-//    PetUpcomingEventsTab()
-//}
-
+// MARK: - Borrado en serie
+private extension PetUpcomingEventsTab {
+    func startDelete(for event: any BasicEvent) {
+        switch event {
+        case let med as Medication:
+            let count = max(0, DoseSeries.futureMedications(from: med, in: context).count - 1)
+            if count == 0 {
+                deleteSingle(med)
+            } else {
+                pendingMed = med
+                pendingFutureCount = count
+                showingDeleteDialog = true
+            }
+        case let vac as Vaccine:
+            let count = max(0, DoseSeries.futureVaccines(from: vac, in: context).count - 1)
+            if count == 0 {
+                deleteSingle(vac)
+            } else {
+                pendingVac = vac
+                pendingFutureCount = count
+                showingDeleteDialog = true
+            }
+        case let dew as Deworming:
+            let count = max(0, DoseSeries.futureDewormings(from: dew, in: context).count - 1)
+            if count == 0 {
+                deleteSingle(dew)
+            } else {
+                pendingDew = dew
+                pendingFutureCount = count
+                showingDeleteDialog = true
+            }
+        default:
+            // Grooming y WeightEntry se eliminan directamente
+            deleteSingle(event)
+        }
+    }
+    
+    func deleteSingle(_ event: any BasicEvent) {
+        NotificationManager.shared.cancelNotification(id: event.id)
+        context.delete(event)
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearPending()
+    }
+    
+    func deleteThisAndFutureMed() {
+        guard let med = pendingMed else { return }
+        for m in DoseSeries.futureMedications(from: med, in: context) {
+            NotificationManager.shared.cancelNotification(id: m.id)
+            context.delete(m)
+        }
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearPending()
+    }
+    func deleteThisAndFutureVac() {
+        guard let vac = pendingVac else { return }
+        for v in DoseSeries.futureVaccines(from: vac, in: context) {
+            NotificationManager.shared.cancelNotification(id: v.id)
+            context.delete(v)
+        }
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearPending()
+    }
+    func deleteThisAndFutureDew() {
+        guard let dew = pendingDew else { return }
+        for d in DoseSeries.futureDewormings(from: dew, in: context) {
+            NotificationManager.shared.cancelNotification(id: d.id)
+            context.delete(d)
+        }
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearPending()
+    }
+    
+    func clearPending() {
+        pendingFutureCount = 0
+        pendingMed = nil
+        pendingVac = nil
+        pendingDew = nil
+        showingDeleteDialog = false
+    }
+}

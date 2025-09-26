@@ -8,7 +8,7 @@
 import SwiftUI
 import SwiftData
 
-struct PetUpcomingEventsTab: View {
+struct PetUpcomingTab: View {
     @ObservedObject var viewModel: PetDetailViewModel
     @Environment(\.modelContext) private var context
 
@@ -116,5 +116,5 @@ private struct EventRow: View {
 
 
 //#Preview {
-//    PetUpcomingEventsTab()
+//    PetUpcomingTab()
 //}

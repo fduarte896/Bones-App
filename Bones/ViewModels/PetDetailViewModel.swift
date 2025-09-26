@@ -69,11 +69,11 @@ final class PetDetailViewModel: ObservableObject {
         }()
 
         var all: [any BasicEvent] = []
-        all.append(contentsOf: meds)
-        all.append(contentsOf: vacs)
-        all.append(contentsOf: dews)
-        all.append(contentsOf: grooms)
-        all.append(contentsOf: weights)
+        all.append(contentsOf: meds.map { $0 as any BasicEvent })
+        all.append(contentsOf: vacs.map { $0 as any BasicEvent })
+        all.append(contentsOf: dews.map { $0 as any BasicEvent })
+        all.append(contentsOf: grooms.map { $0 as any BasicEvent })
+        all.append(contentsOf: weights.map { $0 as any BasicEvent })
 
         let upcoming = all
             .filter { $0.date >= Date() && !$0.isCompleted }
@@ -217,3 +217,4 @@ enum EventSectionKind: Int, CaseIterable, Hashable {
         }
     }
 }
+
