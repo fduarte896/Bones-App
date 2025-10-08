@@ -28,8 +28,13 @@ struct PetDetailView: View {
     @State private var selectedItem: PhotosPickerItem?
     @State private var showingRemoveAlert = false
     @State private var isPresentingEdit = false
-
     
+    // Animación de la barra de tabs
+    @Namespace private var tabNamespace
+    
+    // Estado del subsegmento de Salud (elevado desde PetHealthTab)
+    @State private var healthSegment: PetHealthTab.HealthSegment = .vaccines
+
     // Inicializador para inyectar el ViewModel
     init(pet: Pet) {
         self.pet = pet
@@ -107,32 +112,40 @@ struct PetDetailView: View {
             .padding(.bottom, 16)
 
             
-            // ---------- Picker de tabs ----------
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(DetailTab.allCases, id: \.self) { tab in
-                        Button {
+            // ---------- Picker de tabs (chips ancho completo + animación) ----------
+            HStack(spacing: 8) {
+                ForEach(DetailTab.allCases, id: \.self) { tab in
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85, blendDuration: 0.2)) {
                             selectedTab = tab
-                        } label: {
-                            Text(tab.title)
-                                .font(.subheadline)
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 12)
-                                .background(
-                                    Capsule()
-                                        .fill(selectedTab == tab
-                                              ? Color.accentColor
-                                              : Color(.systemGray5))
-                                )
-                                .foregroundStyle(selectedTab == tab ? .white : .primary)
                         }
-                        .buttonStyle(.plain)          // elimina animación toc
+                    } label: {
+                        Text(tab.title)
+                            .font(.subheadline)
+                            .minimumScaleFactor(0.85)
+                            .lineLimit(1)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .foregroundStyle(selectedTab == tab ? .white : .primary)
+                            .background(
+                                ZStack {
+                                    // Fondo base
+                                    Capsule()
+                                        .fill(Color(.systemGray5))
+                                    // Fondo seleccionado animado
+                                    if selectedTab == tab {
+                                        Capsule()
+                                            .fill(Color.accentColor)
+                                            .matchedGeometryEffect(id: "tabSelection", in: tabNamespace)
+                                    }
+                                }
+                            )
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal)                // margen lateral
             }
-            .padding(.bottom, 6)                      // separación con el contenido
+            .padding(.horizontal)
+            .padding(.bottom, 6)
 
             
             // ---------- Contenido ----------
@@ -140,16 +153,12 @@ struct PetDetailView: View {
                 switch selectedTab {
                 case .upcoming:
                     PetUpcomingEventsTab(viewModel: viewModel)
-                case .medications:
-                    PetMedicationsTab(viewModel: viewModel)
-                case .vaccines:
-                    PetVaccinesTab(viewModel: viewModel)
+                case .health:
+                    PetHealthTab(viewModel: viewModel, segment: $healthSegment)   // Vacunas + Desparasitación + Medicamentos
                 case .grooming:
                     PetGroomingTab(viewModel: viewModel)
                 case .weight:
                     PetWeightTab(pet: pet, viewModel: viewModel)
-
-
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -180,7 +189,32 @@ struct PetDetailView: View {
                 Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
             }
             ToolbarItem(placement: .automatic) {
-                Button { showingQuickAdd = true } label: {
+                Button {
+                    // Decidir initialKind y isDewormingInitial según la ubicación actual
+                    let (initialKind, isDewormingInitial): (EventKind, Bool) = {
+                        if selectedTab == .health {
+                            switch healthSegment {
+                            case .vaccines:
+                                return (.vaccine, false)
+                            case .deworm:
+                                return (.medication, true)
+                            case .medications:
+                                return (.medication, false)
+                            }
+                        } else {
+                            // Fallback a comportamiento anterior por pestaña general
+                            switch selectedTab {
+                            case .grooming: return (.grooming, false)
+                            case .weight:   return (.weight, false)
+                            case .health, .upcoming:
+                                return (.medication, false)
+                            }
+                        }
+                    }()
+                    // Guardamos la intención en un closure dentro de onPresent
+                    quickAddIntent = (initialKind, isDewormingInitial)
+                    showingQuickAdd = true
+                } label: {
                     Label("Nuevo evento", systemImage: "plus")
                 }
             }
@@ -188,9 +222,10 @@ struct PetDetailView: View {
         .sheet(isPresented: $showingQuickAdd, onDismiss: {
             viewModel.fetchEvents()          // refresca la lista al volver
         }) {
+            // Usa la intención calculada para abrir la hoja
             EventQuickAddSheet(pet: pet,
-                               initialKind: selectedTab.defaultEventKind
-            )
+                               initialKind: quickAddIntent.kind,
+                               isDewormingInitial: quickAddIntent.isDeworming)
         }
         .sheet(isPresented: $isPresentingEdit) {
             EditPetSheet(pet: pet)
@@ -199,20 +234,21 @@ struct PetDetailView: View {
         // Inyectamos el context real en el ViewModel al aparecer
         .onAppear { viewModel.inject(context: context) }
     }
+    
+    // Intención calculada para Quick Add
+    @State private var quickAddIntent: (kind: EventKind, isDeworming: Bool) = (.medication, false)
 }
 
 // MARK: - Enum de tabs
 enum DetailTab: CaseIterable {
-    case upcoming, medications, vaccines, grooming, weight
+    case upcoming, health, grooming, weight
     
     var title: String {
         switch self {
         case .upcoming:     return "Próximos"
-        case .medications:  return "Medicamentos"
-        case .vaccines:     return "Vacunas"
+        case .health:       return "Salud"
         case .grooming:     return "Grooming"
         case .weight:       return "Peso"
-
         }
     }
 }
@@ -220,8 +256,7 @@ enum DetailTab: CaseIterable {
 extension DetailTab {
     var defaultEventKind: EventKind {
         switch self {
-        case .medications:  return .medication
-        case .vaccines:     return .vaccine
+        case .health:       return .vaccine       // Quick Add desde Salud: por defecto vacuna
         case .grooming:     return .grooming
         case .weight:       return .weight
         default:            return .medication   // Upcoming u otra

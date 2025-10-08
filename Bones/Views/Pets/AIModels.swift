@@ -36,3 +36,8 @@ struct QuickAddParseResult: Codable, Sendable {
     var events: [ProposedEvent]
     var warnings: [String] = []
 }
+
+// Sugerencia con fecha (usada por recommendSeries)
+struct DatedSuggestion: Codable, Sendable {
+    var date: Date
+}

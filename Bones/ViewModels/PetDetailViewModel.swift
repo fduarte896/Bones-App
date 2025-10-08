@@ -125,6 +125,107 @@ final class PetDetailViewModel: ObservableObject {
     }
 }
 
+// MARK: - Consolidación de vacunas (Fase 1)
+extension PetDetailViewModel {
+    enum VaccineSeriesStatus: Equatable {
+        case notStarted
+        case inProgress(current: Int, total: Int?)
+        case completed
+        case booster(nextDate: Date?)
+    }
+    
+    struct VaccineSeriesSummary: Identifiable {
+        let id = UUID()
+        let baseName: String
+        let items: [Vaccine]                 // todas las dosis de la serie, ordenadas por fecha asc
+        let lastCompleted: Vaccine?          // última marcada como completada
+        let nextPending: Vaccine?            // próxima pendiente (futura) si existe
+        let status: VaccineSeriesStatus
+        let overdueDays: Int?                // si hay pendientes vencidas (en pasado, no completadas)
+    }
+    
+    // Todas las vacunas de esta mascota, ya existe computed 'vaccines' más abajo.
+    // Agrupación y estado por serie:
+    var vaccineSeriesSummaries: [VaccineSeriesSummary] {
+        // Partimos de 'vaccines' ya filtradas por mascota y ordenadas ascendente
+        let all = vaccines
+        let groups = Dictionary(grouping: all) { DoseSeries.splitDoseBase(from: $0.vaccineName) }
+        let now = Date()
+        
+        func daysBetween(_ from: Date, _ to: Date) -> Int {
+            let comps = Calendar.current.dateComponents([.day], from: from, to: to)
+            return abs(comps.day ?? 0)
+        }
+        
+        return groups.keys.sorted().compactMap { base in
+            let items = (groups[base] ?? []).sorted { $0.date < $1.date }
+            let lastCompleted = items.filter { $0.isCompleted }.max(by: { $0.date < $1.date })
+            let nextPendingFuture = items
+                .filter { !$0.isCompleted && $0.date >= now }
+                .min(by: { $0.date < $1.date })
+            
+            // Pendientes vencidas (en pasado sin completar)
+            let pendingPast = items
+                .filter { !$0.isCompleted && $0.date < now }
+                .sorted { $0.date < $1.date }
+            let overdueDays: Int? = {
+                guard let lastPast = pendingPast.last else { return nil }
+                return daysBetween(lastPast.date, now)
+            }()
+            
+            // Cálculo de X/Y esperado e índice actual
+            let totals = items.compactMap { DoseSeries.parseDoseNumbers(from: $0.vaccineName).total }
+            let totalExpected = totals.max()         // si hay etiquetas X/Y, usamos el mayor Y visto
+            // Para "current", contamos completadas con número de dosis si existe; si no, usamos cantidad de completadas
+            let completedCountByLabel = items
+                .filter { $0.isCompleted }
+                .compactMap { DoseSeries.parseDoseNumbers(from: $0.vaccineName).current }
+                .max() ?? 0
+            let completedCountFallback = items.filter { $0.isCompleted }.count
+            let completedCount = max(completedCountByLabel, completedCountFallback)
+            
+            // Estado de la serie
+            let status: VaccineSeriesStatus = {
+                if let total = totalExpected, completedCount >= total {
+                    return .completed
+                }
+                if let next = nextPendingFuture {
+                    if DoseSeries.isBooster(next, among: items) {
+                        return .booster(nextDate: next.date)
+                    }
+                    return .inProgress(current: max(1, completedCount + 1), total: totalExpected)
+                }
+                // Sin próxima programada:
+                if completedCount == 0 {
+                    return .notStarted
+                }
+                if let total = totalExpected, completedCount < total {
+                    // En progreso pero sin próxima programada explícita
+                    return .inProgress(current: max(1, completedCount + 1), total: total)
+                }
+                // Podría ser un esquema sin X/Y ya completado o a la espera de refuerzo manual
+                return .completed
+            }()
+            
+            return VaccineSeriesSummary(
+                baseName: base,
+                items: items,
+                lastCompleted: lastCompleted,
+                nextPending: nextPendingFuture,
+                status: status,
+                overdueDays: overdueDays
+            )
+        }
+    }
+    
+    // Próximas por serie: como máximo 1 por base (la próxima pendiente futura)
+    var upcomingVaccinesBySeries: [Vaccine] {
+        vaccineSeriesSummaries
+            .compactMap { $0.nextPending }
+            .sorted { $0.date < $1.date }
+    }
+}
+
 extension Calendar {
     /// Devuelve la categoría de sección para una fecha futura.
     func sectionKind(for date: Date) -> EventSectionKind {
@@ -159,10 +260,8 @@ extension PetDetailViewModel {
         
         // 1. Trae TODO de Medication (rápido: pocos objetos)
         let all = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
-        
         // 2. Filtra por mascota
         let filtered = all.filter { $0.pet?.id == petID }
-        
         // 3. Ordena (más reciente arriba)
         return filtered.sorted { $0.date < $1.date }
     }

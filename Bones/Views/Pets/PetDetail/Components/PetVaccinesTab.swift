@@ -17,6 +17,18 @@ struct PetVaccinesTab: View {
     @State private var showingDeleteDialog = false
     @State private var pendingDelete: Vaccine?
     
+    // Estado de expansión por serie (clave: baseName)
+    @State private var expandedSeries: Set<String> = []
+    
+    // Estado de expansión por subsección dentro de cada serie (añadimos "overdue")
+    private struct SubsectionsState {
+        var next: Bool = true
+        var overdue: Bool = true
+        var future: Bool = true
+        var history: Bool = false
+    }
+    @State private var expandedSubsections: [String: SubsectionsState] = [:]
+    
     // Año de referencia: el de la próxima vacuna pendiente (más cercana en el futuro)
     private var referenceYear: Int? {
         let now = Date()
@@ -32,40 +44,207 @@ struct PetVaccinesTab: View {
                 ContentUnavailableView("Sin vacunas registradas",
                                        systemImage: "syringe")
             } else {
-                ForEach(viewModel.vaccines, id: \.id) { vac in
-                    NavigationLink {
-                        EventDetailView(event: vac)
-                    } label: {
-                        VaccineRow(
-                            vac: vac,
-                            referenceYear: referenceYear,
-                            allVaccines: viewModel.vaccines
-                        )
-                    }
-                    .swipeActions(edge: .leading) {
+                ForEach(orderedSummaries) { summary in
+                    Section {
+                        if expandedSeries.contains(summary.baseName) {
+                            let now = Date()
+                            let binding = bindingForSubsections(summary.baseName)
+                            
+                            // Próxima (si existe) — disclosure propio
+                            if let next = summary.nextPending {
+                                DisclosureGroup(isExpanded: binding.next) {
+                                    NavigationLink {
+                                        EventDetailView(event: next)
+                                    } label: {
+                                        VaccineRow(
+                                            vac: next,
+                                            referenceYear: referenceYear,
+                                            allVaccines: summary.items
+                                        )
+                                    }
+                                    .swipeActions(edge: .leading) {
+                                        Button {
+                                            next.isCompleted.toggle()
+                                            NotificationManager.shared.cancelNotification(id: next.id)
+                                            try? context.save()
+                                            viewModel.fetchEvents()
+                                        } label: {
+                                            Label("Completar", systemImage: "checkmark")
+                                        }
+                                        .tint(.green)
+                                    }
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            startDelete(for: next)
+                                        } label: {
+                                            Label("Borrar", systemImage: "trash")
+                                        }
+                                    }
+                                } label: {
+                                    Text("Próxima")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            // Vencidas (pendientes < hoy), excluyendo la “Próxima” si ya es vencida
+                            let overduePending = summary.items.filter { vac in
+                                guard !vac.isCompleted, vac.date < now else { return false }
+                                if let next = summary.nextPending {
+                                    return vac.id != next.id
+                                }
+                                return true
+                            }
+                            if !overduePending.isEmpty {
+                                DisclosureGroup(isExpanded: binding.overdue) {
+                                    ForEach(overduePending.sorted(by: { $0.date < $1.date }), id: \.id) { vac in
+                                        NavigationLink {
+                                            EventDetailView(event: vac)
+                                        } label: {
+                                            VaccineRow(
+                                                vac: vac,
+                                                referenceYear: referenceYear,
+                                                allVaccines: summary.items
+                                            )
+                                        }
+                                        .swipeActions(edge: .leading) {
+                                            Button {
+                                                vac.isCompleted.toggle()
+                                                NotificationManager.shared.cancelNotification(id: vac.id)
+                                                try? context.save()
+                                                viewModel.fetchEvents()
+                                            } label: {
+                                                Label("Completar", systemImage: "checkmark")
+                                            }
+                                            .tint(.green)
+                                        }
+                                        .swipeActions(edge: .trailing) {
+                                            Button(role: .destructive) {
+                                                startDelete(for: vac)
+                                            } label: {
+                                                Label("Borrar", systemImage: "trash")
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Text("Vencidas")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            // Dosis futuras (pendientes > hoy), excluyendo la "Próxima"
+                            let futurePending = summary.items.filter { vac in
+                                guard !vac.isCompleted, vac.date > now else { return false }
+                                if let next = summary.nextPending {
+                                    return vac.id != next.id
+                                }
+                                return true
+                            }
+                            if !futurePending.isEmpty {
+                                DisclosureGroup(isExpanded: binding.future) {
+                                    ForEach(futurePending.sorted(by: { $0.date < $1.date }), id: \.id) { vac in
+                                        NavigationLink {
+                                            EventDetailView(event: vac)
+                                        } label: {
+                                            VaccineRow(
+                                                vac: vac,
+                                                referenceYear: referenceYear,
+                                                allVaccines: summary.items
+                                            )
+                                        }
+                                        .swipeActions(edge: .leading) {
+                                            Button {
+                                                vac.isCompleted.toggle()
+                                                NotificationManager.shared.cancelNotification(id: vac.id)
+                                                try? context.save()
+                                                viewModel.fetchEvents()
+                                            } label: {
+                                                Label("Completar", systemImage: "checkmark")
+                                            }
+                                            .tint(.green)
+                                        }
+                                        .swipeActions(edge: .trailing) {
+                                            Button(role: .destructive) {
+                                                startDelete(for: vac)
+                                            } label: {
+                                                Label("Borrar", systemImage: "trash")
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Text("Dosis futuras")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            // Historial (solo completadas) — cerrado por defecto
+                            let history = summary.items.filter { $0.isCompleted }
+                            if !history.isEmpty {
+                                DisclosureGroup(isExpanded: binding.history) {
+                                    ForEach(history.sorted(by: { $0.date > $1.date }), id: \.id) { vac in
+                                        NavigationLink {
+                                            EventDetailView(event: vac)
+                                        } label: {
+                                            VaccineRow(
+                                                vac: vac,
+                                                referenceYear: referenceYear,
+                                                allVaccines: summary.items
+                                            )
+                                        }
+                                        .swipeActions(edge: .leading) {
+                                            Button {
+                                                vac.isCompleted.toggle()
+                                                NotificationManager.shared.cancelNotification(id: vac.id)
+                                                try? context.save()
+                                                viewModel.fetchEvents()
+                                            } label: {
+                                                Label("Completar", systemImage: "checkmark")
+                                            }
+                                            .tint(.green)
+                                        }
+                                        .swipeActions(edge: .trailing) {
+                                            Button(role: .destructive) {
+                                                startDelete(for: vac)
+                                            } label: {
+                                                Label("Borrar", systemImage: "trash")
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Text("Historial")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        // Header “tappable” que actúa como el label del DisclosureGroup de la serie
                         Button {
-                            vac.isCompleted.toggle()
-                            NotificationManager.shared.cancelNotification(id: vac.id)
-                            try? context.save()
-                            viewModel.fetchEvents()
+                            if expandedSeries.contains(summary.baseName) {
+                                expandedSeries.remove(summary.baseName)
+                            } else {
+                                expandedSeries.insert(summary.baseName)
+                                // Inicializa estado de subsecciones si no existe
+                                ensureSubsectionsState(for: summary)
+                            }
                         } label: {
-                            Label("Completar", systemImage: "checkmark")
+                            SeriesRow(summary: summary)
+                                .contentShape(Rectangle())
                         }
-                        .tint(.green)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            startDelete(for: vac)
-                        } label: {
-                            Label("Borrar", systemImage: "trash")
-                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
-        .onAppear { viewModel.fetchEvents() }   // refresca si usas @Published
+        .onAppear {
+            viewModel.fetchEvents()
+            autoExpandCriticalSeries()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .eventsDidChange)) { _ in
             viewModel.fetchEvents()
+            autoExpandCriticalSeries()
         }
         .confirmationDialog(
             "¿Eliminar también futuras dosis?",
@@ -93,9 +272,87 @@ struct PetVaccinesTab: View {
             }
         }
     }
+    
+    // Orden: atrasadas primero, luego por próxima más cercana, luego alfabético
+    private var orderedSummaries: [PetDetailViewModel.VaccineSeriesSummary] {
+        let now = Date()
+        func priority(_ s: PetDetailViewModel.VaccineSeriesSummary) -> (Int, Date?, String) {
+            let isOverdue = (s.nextPending?.date ?? now) < now && s.nextPending != nil
+            let p0 = isOverdue ? 0 : 1
+            let p1 = s.nextPending?.date
+            return (p0, p1, s.baseName.lowercased())
+        }
+        return viewModel.vaccineSeriesSummaries.sorted { a, b in
+            let pa = priority(a), pb = priority(b)
+            if pa.0 != pb.0 { return pa.0 < pb.0 }
+            if pa.1 != pb.1 { return (pa.1 ?? .distantFuture) < (pb.1 ?? .distantFuture) }
+            return pa.2 < pb.2
+        }
+    }
+    
+    private func autoExpandCriticalSeries() {
+        let now = Date()
+        let soon = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
+        var toExpand: Set<String> = expandedSeries
+        for s in viewModel.vaccineSeriesSummaries {
+            var shouldExpand = false
+            if let next = s.nextPending?.date {
+                if next < now || next <= soon {
+                    shouldExpand = true
+                }
+            }
+            // Si hay vencidas, también expandir
+            let hasOverdue = s.items.contains { !$0.isCompleted && $0.date < now }
+            if shouldExpand || hasOverdue {
+                toExpand.insert(s.baseName)
+                // Asegura estado por defecto de subsecciones:
+                // Próxima, Vencidas y Futuras abiertas; Historial cerrado
+                if expandedSubsections[s.baseName] == nil {
+                    expandedSubsections[s.baseName] = SubsectionsState(next: true, overdue: true, future: true, history: false)
+                } else {
+                    // Si ya existe, al menos abre overdue cuando hay vencidas
+                    if hasOverdue {
+                        expandedSubsections[s.baseName]?.overdue = true
+                    }
+                }
+            }
+        }
+        expandedSeries = toExpand
+    }
+    
+    // MARK: - Subsections state helpers (clon de desparasitación, con overdue)
+    private func ensureSubsectionsState(for summary: PetDetailViewModel.VaccineSeriesSummary) {
+        if expandedSubsections[summary.baseName] == nil {
+            expandedSubsections[summary.baseName] = SubsectionsState(next: true, overdue: true, future: true, history: false)
+        }
+    }
+    
+    private func bindingForSubsections(_ baseName: String) -> (next: Binding<Bool>, overdue: Binding<Bool>, future: Binding<Bool>, history: Binding<Bool>) {
+        if expandedSubsections[baseName] == nil {
+            expandedSubsections[baseName] = SubsectionsState()
+        }
+        return (
+            Binding(
+                get: { expandedSubsections[baseName, default: SubsectionsState()].next },
+                set: { expandedSubsections[baseName, default: SubsectionsState()].next = $0 }
+            ),
+            Binding(
+                get: { expandedSubsections[baseName, default: SubsectionsState()].overdue },
+                set: { expandedSubsections[baseName, default: SubsectionsState()].overdue = $0 }
+            ),
+            Binding(
+                get: { expandedSubsections[baseName, default: SubsectionsState()].future },
+                set: { expandedSubsections[baseName, default: SubsectionsState()].future = $0 }
+            ),
+            Binding(
+                get: { expandedSubsections[baseName, default: SubsectionsState()].history },
+                set: { expandedSubsections[baseName, default: SubsectionsState()].history = $0 }
+            )
+        )
+    }
 }
 
-// MARK: - Fila
+// MARK: - Fila de dosis
 private struct VaccineRow: View {
     @Bindable var vac: Vaccine
     var referenceYear: Int?
@@ -105,13 +362,15 @@ private struct VaccineRow: View {
         let parsed = DoseSeries.splitDose(from: vac.vaccineName)
         let numbers = DoseSeries.parseDoseNumbers(from: vac.vaccineName)
         let isBooster = DoseSeries.isBooster(vac, among: allVaccines)
+        let isOverdue = !vac.isCompleted && vac.date < Date()
         
         // Regla de presentación:
         // - Booster: "Dosis de refuerzo"
         // - Primera (0 o 1): "Primera dosis"
         // - Si hay números: "Dosis X/Y"
         // - Si no hay números: no muestra subtítulo de dosis
-        let doseLabel: String? = {
+        // Añadimos "(Vencida)" cuando corresponda y coloreamos en rojo.
+        let baseDoseLabel: String? = {
             if isBooster { return "Dosis de refuerzo" }
             if let cur = numbers.current {
                 if cur <= 1 { return "Primera dosis" }
@@ -120,21 +379,28 @@ private struct VaccineRow: View {
             }
             return nil
         }()
+        let doseLabelToShow: String? = {
+            if let label = baseDoseLabel {
+                return isOverdue ? "\(label) (Vencida)" : "\(label)"
+            } else {
+                return isOverdue ? "Vencida" : nil
+            }
+        }()
         
         let vacYear = Calendar.current.component(.year, from: vac.date)
         let showYear: Bool = {
             guard let ref = referenceYear else { return false }
-            return vacYear > ref    // ahora solo resalta años FUTUROS distintos
+            return vacYear > ref
         }()
         
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(parsed.base).fontWeight(.semibold)
                 
-                if let doseLabel {
-                    Text(doseLabel)
+                if let doseLabelToShow {
+                    Text(doseLabelToShow)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isOverdue ? .red : .secondary)
                 }
                 
                 if let m = vac.manufacturer, !m.isEmpty {
@@ -156,6 +422,94 @@ private struct VaccineRow: View {
             Image(systemName: vac.isCompleted ? "checkmark.circle.fill"
                                               : "syringe")
                 .foregroundStyle(vac.isCompleted ? .green : .accentColor)
+        }
+    }
+}
+
+// MARK: - Fila de serie (encabezado)
+private struct SeriesRow: View {
+    let summary: PetDetailViewModel.VaccineSeriesSummary
+    
+    // Nuevo: detectar si hay dosis vencidas pendientes en la serie
+    private var hasOverdue: Bool {
+        let now = Date()
+        return summary.items.contains { !$0.isCompleted && $0.date < now }
+    }
+    
+    private var statusText: String {
+        // Prioriza mostrar "Vencida" si hay pendientes en el pasado
+        if hasOverdue {
+            return "Vencida"
+        }
+        switch summary.status {
+        case .notStarted:
+            return "No iniciada"
+        case .completed:
+            return "Completada"
+        case .inProgress(let current, let total):
+            if let total {
+                return "En progreso (\(current)/\(total))"
+            } else {
+                return "En progreso"
+            }
+        case .booster(let next):
+            if let d = next {
+                return "Refuerzo • \(d.formatted(date: .abbreviated, time: .omitted))"
+            } else {
+                return "Refuerzo"
+            }
+        }
+    }
+    
+    private var nextText: String {
+        if let next = summary.nextPending {
+            if let overdue = summary.overdueDays, overdue > 0, next.date < Date() {
+                return "Atrasada \(overdue) d"
+            } else {
+                return next.date.formatted(date: .abbreviated, time: .omitted)
+            }
+        } else {
+            return "Sin próxima"
+        }
+    }
+    
+    private var lastText: String {
+        if let last = summary.lastCompleted {
+            return last.date.formatted(date: .abbreviated, time: .omitted)
+        } else {
+            return "—"
+        }
+    }
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(summary.baseName)
+                    .fontWeight(.semibold)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(hasOverdue ? .red : .secondary)
+                HStack(spacing: 12) {
+                    LabeledValue(label: "Última", value: lastText)
+                    LabeledValue(label: "Próxima", value: nextText)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "syringe")
+        }
+    }
+}
+
+private struct LabeledValue: View {
+    let label: String
+    let value: String
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label + ":")
+            Text(value)
+                .fontWeight(.medium)
         }
     }
 }
@@ -296,7 +650,7 @@ private enum VaccinesPreviewData {
                          manufacturer: nil,
                          notes: "Aplicar por la mañana")
         
-        // Otra con fabricante vacío y en el pasado, no completada
+        // Otra con fabricante vacío y en el pasado, no completada (vencida)
         let v4 = Vaccine(date: now.addingTimeInterval(-3 * 24 * 3600),
                          pet: pet,
                          vaccineName: "Parvovirus",
@@ -312,4 +666,3 @@ private enum VaccinesPreviewData {
         return pet
     }
 }
-

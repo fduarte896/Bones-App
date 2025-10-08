@@ -272,16 +272,28 @@ struct EventsListView: View {
     
     private func futureDewormings(from dew: Deworming) -> [Deworming] {
         guard let petID = dew.pet?.id else { return [dew] }
+        let start = dew.date
+        
+        // Si hay seriesID, úsalo (recurrencias RRULE comparten seriesID)
+        if let sid = dew.seriesID {
+            let predicate = #Predicate<Deworming> { d in
+                d.pet?.id == petID && d.date >= start && d.seriesID == sid
+            }
+            let fetched = (try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))) ?? []
+            // Asegura orden ascendente por fecha
+            return fetched.sorted { $0.date < $1.date }
+        }
+        
+        // Fallback: agrupar por notas normalizadas (para series manuales antiguas)
         func norm(_ s: String?) -> String {
             (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         }
         let baseNotes = norm(dew.notes)
-        let start = dew.date
         let predicate = #Predicate<Deworming> { d in
             d.pet?.id == petID && d.date >= start
         }
         let fetched = (try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))) ?? []
-        return fetched.filter { norm($0.notes) == baseNotes }
+        return fetched.filter { norm($0.notes) == baseNotes }.sorted { $0.date < $1.date }
     }
     
     // Reutiliza el mismo separador de dosis que usas en la fila

@@ -58,13 +58,27 @@ struct EventQuickAddSheet: View {
     @Environment(\.dismiss) private var dismiss
     
     // Init
-    init(pet: Pet, initialKind: EventKind = .medication) {
+    init(pet: Pet, initialKind: EventKind = .medication, isDewormingInitial: Bool = false) {
         self.pet = pet
         _kind = State(initialValue: initialKind)
+        // Solo tiene sentido preactivar el toggle si estamos en la UI de medicamento
+        if initialKind == .medication {
+            _isDeworming = State(initialValue: isDewormingInitial)
+        } else {
+            _isDeworming = State(initialValue: false)
+        }
     }
     
     // ----------------- Estado -----------------
     @State private var kind: EventKind
+    
+    // NUEVO: Quick Add por texto (IA)
+    @State private var quickAddText: String = ""
+    @State private var quickAddInfo: String?
+    @State private var quickAddWarning: String?
+    @State private var lastParsed: ProposedEvent?
+    @State private var isAnalyzing = false
+    @State private var isSuggesting = false
     
     // Comunes
     @State private var title = ""
@@ -73,6 +87,13 @@ struct EventQuickAddSheet: View {
     // Medicamento
     @State private var dosage = ""
     @State private var frequency = ""
+    // NUEVO: marcar como desparasitante
+    @State private var isDeworming = false
+    
+    // NUEVO: RRULE para desparasitación
+    @State private var rruleEnabled = false
+    @State private var rruleIntervalValue = 3
+    @State private var rruleIntervalUnit: IntervalUnit = .months
     
     // Vacuna
     @State private var manufacturer = ""
@@ -138,6 +159,52 @@ struct EventQuickAddSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                // ---------- Quick Add por texto (IA) ----------
+                #if !TESTFLIGHT
+                Section("Añadir por texto") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("Ej.: Amoxicilina 250 mg cada 8 h mañana 6pm",
+                                  text: $quickAddText, axis: .vertical)
+                            .lineLimit(1...3)
+                            .textInputAutocapitalization(.sentences)
+                            .autocorrectionDisabled(true)
+                        
+                        HStack {
+                            Button {
+                                Task {
+                                    await analyzeQuickAdd()
+                                }
+                            } label: {
+                                Label(isAnalyzing ? "Analizando…" : "Analizar", systemImage: isAnalyzing ? "hourglass" : "wand.and.stars")
+                            }
+                            .disabled(isAnalyzing || quickAddText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            
+                            Button {
+                                Task {
+                                    await suggestSeries()
+                                }
+                            } label: {
+                                Label(isSuggesting ? "Sugiriendo…" : "Sugerir serie", systemImage: "calendar.badge.plus")
+                            }
+                            .disabled(isSuggesting || !canSuggestSeries)
+                            
+                            if let info = quickAddInfo, !info.isEmpty {
+                                Spacer()
+                                Text(info)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        if let warn = quickAddWarning {
+                            Label(warn, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                                .font(.footnote)
+                        }
+                    }
+                }
+                #endif
+                
                 // ---------- Tipo ----------
                 TypeChips
                 
@@ -165,12 +232,40 @@ struct EventQuickAddSheet: View {
                             isSettingEventDateProgrammatically = false
                         }
                         .buttonStyle(.borderless)
-                        .tint(.blue) // azul clásico
+                        .tint(.blue)
                     }
                 }
                 
                 // ---------- Programación futura ----------
                 futureScheduleSection
+                
+                // ---------- RRULE para desparasitación ----------
+                if kind == .medication && isDeworming {
+                    Section("Recurrencias") {
+                        Toggle("Crear recurrencias", isOn: $rruleEnabled)
+                        if rruleEnabled {
+                            HStack {
+                                Text("Cada")
+                                    .foregroundStyle(.secondary)
+                                Stepper(value: $rruleIntervalValue, in: 1...30) {
+                                    Text("\(rruleIntervalValue)")
+                                        .font(.body.monospacedDigit())
+                                }
+                                Picker("", selection: $rruleIntervalUnit) {
+                                    // Horas también soportado por RRULE, pero normalmente no se usa en desparasitación.
+                                    Text(IntervalUnit.days.label).tag(IntervalUnit.days)
+                                    Text(IntervalUnit.weeks.label).tag(IntervalUnit.weeks)
+                                    Text(IntervalUnit.months.label).tag(IntervalUnit.months)
+                                }
+                                .pickerStyle(.menu)
+                            }
+
+                            Text("Nota: Las recurrencias crearán este mismo evento de acuerdo a tu frecuencia seleccionada.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 
                 // ---------- Validación Peso ----------
                 if kind == .weight, let warning = validationMessageWeight() {
@@ -196,7 +291,6 @@ struct EventQuickAddSheet: View {
                 if newKind == .weight { prefillWeight() }
             }
             .onChange(of: eventDate) { _, _ in
-                // Marcar “sucia” solo cuando el usuario cambie la fecha en Peso
                 if kind == .weight && !isSettingEventDateProgrammatically {
                     weightDateDirty = true
                 }
@@ -240,12 +334,26 @@ private extension EventQuickAddSheet {
     @ViewBuilder var detailsSection: some View {
         switch kind {
         case .medication:
-            TextField("Nombre del medicamento", text: $title)
+            TextField(isDeworming ? "Nombre del desparasitante" : "Nombre del medicamento", text: $title)
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.sentences)
+            
+            // Toggle para tratar como Desparasitación
+            Toggle("Es un desparasitante?", isOn: $isDeworming)
+            
+            // Campos de medicamento (se deshabilitan si es desparasitante)
             TextField("Dosis (ej. 10 mg)", text: $dosage)
+                .disabled(isDeworming)
+                .opacity(isDeworming ? 0.5 : 1.0)
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.never)
+            
+            TextField("Frecuencia (ej. cada 8 h)", text: $frequency)
+                .disabled(isDeworming)
+                .opacity(isDeworming ? 0.5 : 1.0)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.never)
+            
         case .vaccine:
             TextField("Nombre de la vacuna", text: $title)
                 .autocorrectionDisabled(true)
@@ -344,7 +452,7 @@ private extension EventQuickAddSheet {
         }
     }
     
-    // ---- Medicamentos ----
+    // ---- Medicamentos / Desparasitación ----
     var medicationControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             ModeChips
@@ -606,8 +714,21 @@ extension EventQuickAddSheet {
             return
         }
         
-        let primary = insertEvent(on: eventDate, doseLabel: nil)
-        if scheduleEnabled { scheduleFuture(from: primary) }
+        // Si es desparasitante, generamos una serieID única para agrupar
+        let dewormSeriesID: UUID? = (kind == .medication && isDeworming) ? UUID() : nil
+        let rrule: String? = (kind == .medication && isDeworming && rruleEnabled) ? makeRRULE(value: rruleIntervalValue, unit: rruleIntervalUnit) : nil
+        
+        // Inserta el evento principal
+        let primary = insertEvent(on: eventDate, doseLabel: nil, dewormSeriesID: dewormSeriesID, rrule: rrule)
+        
+        // Programaciones futuras “manuales” (medicamentos/vacunas)
+        if scheduleEnabled { scheduleFuture(from: primary, dewormSeriesID: dewormSeriesID, rrule: rrule) }
+        
+        // Expansión de RRULE para desparasitación (crea futuras ocurrencias reales)
+        if kind == .medication, isDeworming, let rrule, let seriesID = dewormSeriesID {
+            expandDewormingRecurrence(anchor: eventDate, seriesID: seriesID, rrule: rrule)
+        }
+        
         try? context.save()
         NotificationCenter.default.post(name: .eventsDidChange, object: nil)
         dismiss()
@@ -615,16 +736,30 @@ extension EventQuickAddSheet {
     
     @discardableResult
     private func insertEvent(on date: Date,
-                             doseLabel: String?) -> any BasicEvent {
+                             doseLabel: String?,
+                             dewormSeriesID: UUID? = nil,
+                             rrule: String? = nil) -> any BasicEvent {
         switch kind {
         case .medication:
-            let name = doseLabel.map { "\(title) (\($0))" } ?? title
-            let m = Medication(date: date, pet: pet,
-                               name: name, dosage: dosage, frequency: frequency)
-            context.insert(m)
-            notify(id: m.id, title: "Medicamento",
-                   body: "\(pet.name) – \(name)", at: date)
-            return m
+            if isDeworming {
+                // Notas = título [+ " (dosis X/Y)"]
+                let notes = doseLabel.map { "\(title) (\($0))" } ?? title
+                let d = Deworming(date: date, pet: pet, notes: notes, prescriptionImageData: nil, seriesID: dewormSeriesID)
+                d.rrule = rrule
+                d.isRecurring = (rrule != nil)
+                context.insert(d)
+                notify(id: d.id, title: "Desparasitación",
+                       body: "\(pet.name) – \(notes)", at: date)
+                return d
+            } else {
+                let name = doseLabel.map { "\(title) (\($0))" } ?? title
+                let m = Medication(date: date, pet: pet,
+                                   name: name, dosage: dosage, frequency: frequency)
+                context.insert(m)
+                notify(id: m.id, title: "Medicamento",
+                       body: "\(pet.name) – \(name)", at: date)
+                return m
+            }
         case .vaccine:
             // Etiquetamos dosis X/Y cuando corresponda
             let name = doseLabel.map { "\(title) (\($0))" } ?? title
@@ -660,7 +795,7 @@ extension EventQuickAddSheet {
         }
     }
     
-    private func scheduleFuture(from primary: any BasicEvent) {
+    private func scheduleFuture(from primary: any BasicEvent, dewormSeriesID: UUID? = nil, rrule: String? = nil) {
         let cal = Calendar.current
         var next = primary.date
         var doseIndex = 1
@@ -690,7 +825,10 @@ extension EventQuickAddSheet {
                 let total = dates.count + 1 // incluye la primera
                 for d in dates {
                     doseIndex += 1
-                    insertEvent(on: d, doseLabel: "dosis \(doseIndex)/\(total)")
+                    insertEvent(on: d,
+                                doseLabel: "dosis \(doseIndex)/\(total)",
+                                dewormSeriesID: isDeworming ? dewormSeriesID : nil,
+                                rrule: isDeworming ? rrule : nil)
                 }
             } else {
                 let total = timesPerDay * durationDays
@@ -700,7 +838,10 @@ extension EventQuickAddSheet {
                     next = cal.date(byAdding: .hour,
                                     value: Int(hours.rounded()),
                                     to: next)!
-                    insertEvent(on: next, doseLabel: "dosis \(doseIndex)/\(total)")
+                    insertEvent(on: next,
+                                doseLabel: "dosis \(doseIndex)/\(total)",
+                                dewormSeriesID: isDeworming ? dewormSeriesID : nil,
+                                rrule: isDeworming ? rrule : nil)
                 }
             }
         case .vaccine:
@@ -765,7 +906,7 @@ extension EventQuickAddSheet {
     }
 }
 
-// MARK: - Helpers de cálculo y validación
+// MARK: - Helpers de cálculo, RRULE y validación
 private extension EventQuickAddSheet {
     func prefillWeight() {
         // Prefill con último peso de la mascota (igual que en la tab)
@@ -984,6 +1125,323 @@ private extension EventQuickAddSheet {
         }
         return (count, last)
     }
+    
+    // MARK: - RRULE helpers
+    func makeRRULE(value: Int, unit: IntervalUnit) -> String {
+        let freq: String
+        switch unit {
+        case .hours:  freq = "HOURLY"
+        case .days:   freq = "DAILY"
+        case .weeks:  freq = "WEEKLY"
+        case .months: freq = "MONTHLY"
+        }
+        let interval = max(1, value)
+        return "FREQ=\(freq);INTERVAL=\(interval)"
+    }
+    
+    func rrulePreviewString() -> String? {
+        guard rruleEnabled else { return nil }
+        return makeRRULE(value: rruleIntervalValue, unit: rruleIntervalUnit)
+    }
+    
+    // MARK: - Expansión de RRULE (Desparasitación)
+    func expandDewormingRecurrence(anchor: Date, seriesID: UUID, rrule: String) {
+        // Parse básico de "FREQ=...;INTERVAL=N"
+        let parts = rrule
+            .split(separator: ";")
+            .reduce(into: [String:String]()) { dict, kv in
+                let p = kv.split(separator: "=", maxSplits: 1).map(String.init)
+                if p.count == 2 { dict[p[0].uppercased()] = p[1].uppercased() }
+            }
+        guard let freq = parts["FREQ"] else { return }
+        let interval = Int(parts["INTERVAL"] ?? "1") ?? 1
+        
+        // Decide la unidad
+        let unit: IntervalUnit
+        switch freq {
+        case "HOURLY":  unit = .hours
+        case "DAILY":   unit = .days
+        case "WEEKLY":  unit = .weeks
+        case "MONTHLY": unit = .months
+        default:        unit = .months
+        }
+        
+        // Horizonte: 24 meses a partir de la fecha ancla
+        let horizon = Calendar.current.date(byAdding: .month, value: 24, to: anchor) ?? anchor
+        
+        // Genera fechas (omitimos la ancla; ya está insertada)
+        var dates: [Date] = []
+        var current = anchor
+        while true {
+            let next = addInterval(interval, unit: unit, to: current)
+            if next > horizon { break }
+            dates.append(next)
+            current = next
+        }
+        
+        // Evitar duplicados: no insertes si ya hay una Deworming con mismo seriesID y fecha
+        for d in dates {
+            if !existsDeworming(seriesID: seriesID, date: d, petID: pet.id) {
+                // Reusa insertEvent para notificaciones y campos
+                _ = insertEvent(on: d, doseLabel: nil, dewormSeriesID: seriesID, rrule: rrule)
+            }
+        }
+    }
+    
+    func existsDeworming(seriesID: UUID, date: Date, petID: UUID) -> Bool {
+        let predicate = #Predicate<Deworming> { dew in
+            dew.pet?.id == petID && dew.seriesID == seriesID && dew.date == date
+        }
+        let fetched = try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))
+        return (fetched?.isEmpty == false)
+    }
+}
+
+// MARK: - Quick Add (IA) helpers
+private extension EventQuickAddSheet {
+    var canSuggestSeries: Bool {
+        // Solo tiene sentido para Medicamentos y Vacunas; no para peso/grooming ni desparasitación (tiene RRULE aparte)
+        if kind == .weight || kind == .grooming { return false }
+        if kind == .medication && isDeworming { return false }
+        // Debe haber título o un lastParsed; si no, no sabremos qué sugerir
+        return !(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && lastParsed == nil)
+    }
+    
+    func analyzeQuickAdd() async {
+        isAnalyzing = true
+        defer { isAnalyzing = false }
+        
+        quickAddWarning = nil
+        quickAddInfo = nil
+        lastParsed = nil
+        
+        let result = await AIEngine.shared.parseQuickAdd(text: quickAddText)
+        if let proposed = result.events.first {
+            // Mapear tipo detectado → UI
+            applyProposedEvent(proposed)
+            
+            // Auto‑prefill de programación para medicamentos si hay frecuencia “cada X …”
+            if proposed.kind == .medication, let (val, unit) = parseFrequencyToInterval(proposed.frequency ?? "") {
+                scheduleEnabled = true
+                scheduleMode = .interval
+                intervalValue = val
+                intervalUnit = unit
+                // Duración por defecto: 1 día cuando son horas; 7 días si es en días; el usuario puede ajustar
+                switch unit {
+                case .hours:  durationDays = 1
+                case .days:   durationDays = max(1, val)  // “cada 1/2 días” → al menos 1 día
+                case .weeks:  durationDays = 7 * max(1, val)
+                case .months: durationDays = 30 * max(1, val)
+                }
+            }
+            
+            // Info de confirmación
+            let kindText: String = {
+                switch proposed.kind {
+                case .medication: return "Medicamento"
+                case .vaccine:    return "Vacuna"
+                case .deworming:  return "Desparasitación"
+                case .grooming:   return "Grooming"
+                case .weight:     return "Peso"
+                }
+            }()
+            var parts: [String] = [kindText]
+            parts.append(proposed.baseName)
+            parts.append(proposed.date.formatted(date: .abbreviated, time: .shortened))
+            if let d = proposed.dosage, !d.isEmpty { parts.append(d) }
+            if let f = proposed.frequency, !f.isEmpty { parts.append(f) }
+            if let m = proposed.manufacturer, !m.isEmpty { parts.append("Fab: \(m)") }
+            quickAddInfo = parts.joined(separator: " · ")
+            lastParsed = proposed
+        }
+        if let warn = result.warnings.first {
+            quickAddWarning = warn
+        }
+    }
+    
+    func applyProposedEvent(_ e: ProposedEvent) {
+        // Tipo
+        let mapping = mapToEventKind(e.kind)
+        kind = mapping.kind
+        isDeworming = mapping.isDeworming
+        
+        // Campos comunes
+        title = e.baseName
+        eventDate = e.date
+        
+        // Campos específicos
+        switch e.kind {
+        case .medication:
+            dosage = e.dosage ?? ""
+            frequency = e.frequency ?? ""
+        case .deworming:
+            // Tratado como medicamento “desparasitante”
+            dosage = "" // normal en desparasitación
+            frequency = e.frequency ?? ""
+        case .vaccine:
+            manufacturer = e.manufacturer ?? ""
+        case .grooming:
+            break
+        case .weight:
+            break
+        }
+    }
+    
+    func mapToEventKind(_ k: ProposedEventKind) -> (kind: EventKind, isDeworming: Bool) {
+        switch k {
+        case .vaccine:    return (.vaccine, false)
+        case .medication: return (.medication, false)
+        case .deworming:  return (.medication, true)   // UI de medicamento con flag de desparasitación
+        case .grooming:   return (.grooming, false)
+        case .weight:     return (.weight, false)
+        }
+    }
+    
+    func parseFrequencyToInterval(_ freq: String) -> (Int, IntervalUnit)? {
+        let lower = freq.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        // Formatos esperados: “cada 8 h”, “cada día”, “cada 2 días”, “cada 3 semanas”, “cada mes”, “cada 2 meses”
+        if lower == "cada día" { return (1, .days) }
+        if lower == "cada semana" { return (1, .weeks) }
+        if lower == "cada mes" { return (1, .months) }
+        // “cada X h/días/semanas/meses”
+        let parts = lower.split(separator: " ")
+        // ej: ["cada","8","h"]  o ["cada","2","días"]
+        if parts.count >= 3, parts[0] == "cada", let value = Int(parts[1]) {
+            let unitStr = parts[2]
+            if unitStr.hasPrefix("h") { return (value, .hours) }
+            if unitStr.hasPrefix("d") { return (value, .days) }
+            if unitStr.hasPrefix("semana") { return (value, .weeks) }
+            if unitStr.hasPrefix("mes") { return (value, .months) }
+        }
+        return nil
+        }
+    
+    func suggestSeries() async {
+        isSuggesting = true
+        defer { isSuggesting = false }
+        
+        // Determinar “source” para proponer: lastParsed o UI actual
+        let proposed: ProposedEvent = {
+            if let p = lastParsed { return p }
+            // Mapear desde UI
+            let pkind: ProposedEventKind = {
+                switch kind {
+                case .medication: return .medication
+                case .vaccine:    return .vaccine
+                case .grooming:   return .grooming
+                case .weight:     return .weight
+                }
+            }()
+            return ProposedEvent(kind: pkind,
+                                 baseName: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 fullName: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 date: eventDate,
+                                 dosage: dosage.isEmpty ? nil : dosage,
+                                 frequency: frequency.isEmpty ? nil : frequency,
+                                 notes: nil,
+                                 manufacturer: manufacturer.isEmpty ? nil : manufacturer)
+        }()
+        
+        switch proposed.kind {
+        case .medication:
+            guard !isDeworming else { return } // desparasitación usa RRULE/otra lógica
+            // Intentar extraer intervalo de la frecuencia
+            let parsed = parseFrequencyToInterval(proposed.frequency ?? "")
+            let hoursInterval: Int? = {
+                guard let p = parsed else { return nil }
+                switch p.1 {
+                case .hours:  return p.0
+                case .days:   return p.0 * 24
+                case .weeks:  return p.0 * 7 * 24
+                case .months: return p.0 * 30 * 24
+                }
+            }()
+            let series = await AIEngine.shared.recommendSeries(for: .medication,
+                                                               baseName: proposed.baseName,
+                                                               start: proposed.date,
+                                                               dosage: proposed.dosage,
+                                                               hoursInterval: hoursInterval,
+                                                               totalDoses: nil)
+            // Precargar controles: intervalo/duración aproximada
+            let dates = series.map { $0.date }
+            if dates.count >= 2 {
+                let delta = dates[1].timeIntervalSince(dates[0])
+                let (val, unit) = bestUnitAndValue(for: delta)
+                scheduleEnabled = true
+                scheduleMode = .interval
+                intervalValue = val
+                intervalUnit = unit
+                // duración: diferencia entre primera y última en días (redondeo hacia arriba, mínimo 1)
+                let days = max(1, Int(ceil(dates.last!.timeIntervalSince(dates[0]) / (24*3600))))
+                durationDays = days
+            } else {
+                // Serie de 1: activar al menos 1 día con el intervalo detectado (o 8h por defecto)
+                scheduleEnabled = true
+                scheduleMode = .interval
+                intervalValue = parsed?.0 ?? 8
+                intervalUnit = parsed?.1 ?? .hours
+                durationDays = 1
+            }
+            
+        case .vaccine:
+            let series = await AIEngine.shared.recommendSeries(for: .vaccine,
+                                                               baseName: proposed.baseName,
+                                                               start: proposed.date,
+                                                               dosage: nil,
+                                                               hoursInterval: nil,
+                                                               totalDoses: nil)
+            // Derivar espaciamiento y número de dosis extra
+            let dates = series.map { $0.date }.sorted()
+            if dates.count >= 2 {
+                let delta = dates[1].timeIntervalSince(dates[0])
+                let (val, unit) = bestUnitAndValue(for: delta)
+                vaccineMode = .automatic
+                scheduleEnabled = true
+                vaccineSeriesDoseCount = max(1, dates.count - 1) // "extra"
+                vaccineSeriesSpacingValue = val
+                vaccineSeriesSpacingUnit = unit == .days ? .weeks : unit // para vacunas solemos usar semanas/meses
+                // Refuerzo sugerido anual por defecto
+                boostersEnabled = true
+                boosterFrequencyValue = 12
+                boosterFrequencyUnit = .months
+                boosterRoundsCount = 1
+            } else {
+                // No reconoció esquema: activa automático con 2 extras a 3 semanas
+                vaccineMode = .automatic
+                scheduleEnabled = true
+                vaccineSeriesDoseCount = 2
+                vaccineSeriesSpacingValue = 3
+                vaccineSeriesSpacingUnit = .weeks
+                boostersEnabled = true
+                boosterFrequencyValue = 12
+                boosterFrequencyUnit = .months
+                boosterRoundsCount = 1
+            }
+            
+        case .grooming, .weight, .deworming:
+            // No sugerimos serie aquí
+            break
+        }
+        
+        // Feedback háptico leve
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    func bestUnitAndValue(for interval: TimeInterval) -> (Int, IntervalUnit) {
+        let hour: Double = 3600
+        let day: Double = 24 * hour
+        let week: Double = 7 * day
+        if interval < 1.5 * day {
+            let hours = Int((interval / hour).rounded())
+            return (max(1, hours), .hours)
+        } else if interval < 2 * week {
+            let days = Int((interval / day).rounded())
+            return (max(1, days), .days)
+        } else {
+            let weeks = Int((interval / week).rounded())
+            return (max(1, weeks), .weeks)
+        }
+    }
 }
 
 private extension Double {
@@ -995,7 +1453,8 @@ private extension Double {
 
 #Preview {
     NavigationStack {
-        EventQuickAddSheet(pet: Pet(name: "Firulais"), initialKind: .vaccine)
+        EventQuickAddSheet(pet: Pet(name: "Firulais"), initialKind: .medication)
             .modelContainer(for: Pet.self, inMemory: true)
     }
 }
+
