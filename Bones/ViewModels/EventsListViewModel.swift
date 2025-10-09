@@ -29,8 +29,6 @@ enum EventTypeFilter: String, CaseIterable, Identifiable {
     }
 }
 
-
-
 @MainActor
 final class EventsListViewModel: ObservableObject {
     
@@ -48,11 +46,15 @@ final class EventsListViewModel: ObservableObject {
         allPets = (try? context.fetch(FetchDescriptor<Pet>(sortBy: [SortDescriptor(\.name)]))) ?? []
     }
     
-    // EventsListViewModel.swift
-    @Published var showPast: Bool = false {
+    // Nueva configuración de “pasados”
+    // - Mostrar vencidos (pendientes en el pasado): ON por defecto
+    // - Incluir completados: OFF por defecto
+    @Published var showOverdue: Bool = true {
         didSet { buildSections() }
     }
-
+    @Published var includeCompletedPast: Bool = false {
+        didSet { buildSections() }
+    }
     
     // MARK: – Dependencies
     private let context: ModelContext
@@ -92,16 +94,19 @@ final class EventsListViewModel: ObservableObject {
     
     // MARK: – Build grouped, sorted sections
     private func buildSections() {
+        let now = Date()
+        let cal = Calendar.current
+        
         // 1. Filtrado por tipo y (opcional) mascota
         let filtered = allEvents.filter { event in
             filter.matches(event) &&
             (petFilter.id == nil || event.pet?.id == petFilter.id)
         }
         
-        // 2. Según el toggle, separamos futuros y pasados
-        let futureEvents = filtered
-            .filter { $0.date >= Date() && !$0.isCompleted }
-            .sorted { $0.date < $1.date }
+        // 2. “Hoy” debe incluir todos los pendientes de hoy (aunque ya hayan pasado) + futuros > ahora
+        let todayPending = filtered.filter { !$0.isCompleted && cal.isDateInToday($0.date) }
+        let futureBeyondToday = filtered.filter { !$0.isCompleted && $0.date > now && !cal.isDateInToday($0.date) }
+        let futureEvents = (todayPending + futureBeyondToday).sorted { $0.date < $1.date }
         
         var tmpSections: [EventSection] = Dictionary(grouping: futureEvents) {
                 Calendar.current.sectionKind(for: $0.date)
@@ -109,18 +114,34 @@ final class EventsListViewModel: ObservableObject {
             .sorted { $0.key.rawValue < $1.key.rawValue }
             .map { EventSection(title: $0.key.label, items: $0.value) }
         
-        if showPast {
-            let pastEvents = filtered
-                .filter { $0.isCompleted || $0.date < Date() }
-                .sorted { $0.date > $1.date }              // del más reciente al más antiguo
-            
-            let pastSections = Dictionary(grouping: pastEvents) {
-                    Calendar.current.pastSectionKind(for: $0.date)
-                }
-                .sorted { $0.key.rawValue < $1.key.rawValue }
-                .map { EventSection(title: $0.key.label, items: $0.value) }
-            
-            tmpSections.append(contentsOf: pastSections)
+        // 3. Vencidos (pendientes en el pasado) – opcional, EXCLUYENDO los de hoy
+        if showOverdue {
+            let overdueEvents = filtered
+                .filter { !$0.isCompleted && $0.date < now && !cal.isDateInToday($0.date) }
+                .sorted { $0.date > $1.date } // del más reciente al más antiguo
+            if !overdueEvents.isEmpty {
+                let overdueSections = Dictionary(grouping: overdueEvents) {
+                        Calendar.current.pastSectionKind(for: $0.date)
+                    }
+                    .sorted { $0.key.rawValue < $1.key.rawValue }
+                    .map { EventSection(title: $0.key.label, items: $0.value) }
+                tmpSections.append(contentsOf: overdueSections)
+            }
+        }
+        
+        // 4. Completados (solo si el usuario los quiere ver)
+        if includeCompletedPast {
+            let completedEvents = filtered
+                .filter { $0.isCompleted }
+                .sorted { $0.date > $1.date }
+            if !completedEvents.isEmpty {
+                let completedSections = Dictionary(grouping: completedEvents) {
+                        Calendar.current.pastSectionKind(for: $0.date)
+                    }
+                    .sorted { $0.key.rawValue < $1.key.rawValue }
+                    .map { EventSection(title: $0.key.label, items: $0.value) }
+                tmpSections.append(contentsOf: completedSections)
+            }
         }
         
         sections = tmpSections
@@ -132,10 +153,9 @@ final class EventsListViewModel: ObservableObject {
         event.completedAt = event.isCompleted ? Date() : nil
         NotificationManager.shared.cancelNotification(id: event.id)
         try? context.save()
-        buildSections()    // o fetchEvents() según el VM
+        buildSections()
     }
 
-    
     func delete(_ event: any BasicEvent) {
         NotificationManager.shared.cancelNotification(id: event.id)
         context.delete(event)
@@ -149,7 +169,6 @@ final class EventsListViewModel: ObservableObject {
         fetchAllEvents()
     }
 }
-
 
 struct PetFilter: Identifiable, Hashable {
     let id: UUID?

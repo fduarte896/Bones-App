@@ -168,6 +168,33 @@ private struct MedicationDetailView: View {
     var onDelete: () -> Void
     @Environment(\.modelContext) private var context
     
+    // MARK: – Añadir próximas dosis (estado local)
+    private enum ScheduleMode: String, CaseIterable, Identifiable {
+        case interval, perDay
+        var id: Self { self }
+        var label: String { self == .interval ? "Por intervalo" : "Por día" }
+    }
+    private enum IntervalUnit: String, CaseIterable, Identifiable {
+        case hours, days, weeks, months
+        var id: Self { self }
+        var label: String {
+            switch self {
+            case .hours:  "horas"
+            case .days:   "días"
+            case .weeks:  "semanas"
+            case .months: "meses"
+            }
+        }
+    }
+    
+    @State private var scheduleMode: ScheduleMode = .interval
+    @State private var intervalValue: Int = 8
+    @State private var intervalUnit: IntervalUnit = .hours
+    @State private var timesPerDay: Int = 3
+    @State private var durationDays: Int = 1
+    @State private var isAdding = false
+    @State private var infoText: String?
+    
     var body: some View {
         Form {
             Header(pet: med.pet, title: med.name, icon: "pills.fill", isCompleted: med.isCompleted, date: med.date)
@@ -195,6 +222,88 @@ private struct MedicationDetailView: View {
                            selection: $med.date,
                            displayedComponents: [.date, .hourAndMinute])
                     .onChange(of: med.date) { _, _ in reschedule(for: med) }
+            }
+            
+            // MARK: – Nueva sección: Añadir próximas dosis
+            Section("Añadir próximas dosis") {
+                // Acción simple: una sola dosis extra, basada en serie/frecuencia (no depende de controles)
+                if let next = suggestedNextDoseDate() {
+                    LabeledContent("Siguiente dosis") {
+                        Text(next.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    LabeledContent("Siguiente sugerida") {
+                        Text("No determinada · se usará +8 h")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                Button {
+                    Task { await addNextDoseSmart() }
+                } label: {
+                    Label(isAdding ? "Añadiendo…" : "Añadir siguiente dosis", systemImage: "plus.circle")
+                }
+                .disabled(isAdding)
+                
+                // Controles avanzados para series (cuando quieren varias)
+
+            }
+            
+            Section ("Añadir otras dosis") {
+                Picker("Modo", selection: $scheduleMode) {
+                    ForEach(ScheduleMode.allCases) { m in
+                        Text(m.label).tag(m)
+                    }
+                }
+                .pickerStyle(.segmented)
+                
+                if scheduleMode == .interval {
+                    IntervalRow(value: $intervalValue, unit: $intervalUnit)
+                    Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...90)
+                    
+                    if let summary = intervalSummary(
+                        start: med.date,
+                        durationDays: durationDays,
+                        stepValue: intervalValue,
+                        stepUnit: intervalUnit
+                    ) {
+                        Text("Se crearán \(summary.total) dosis en total (incluida la actual). Última: \(summary.last.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Stepper("\(timesPerDay) × por día", value: $timesPerDay, in: 1...12)
+                    Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...30)
+                }
+                
+                if let preview = medicationPreview(
+                    start: med.date,
+                    mode: scheduleMode,
+                    intervalValue: intervalValue,
+                    intervalUnit: intervalUnit,
+                    durationDays: durationDays,
+                    timesPerDay: timesPerDay
+                ), preview.count > 1 {
+                    MedicationPreviewView(dates: preview)
+                        .padding(.top, 4)
+                }
+                
+                HStack {
+                    Spacer()
+                    Button {
+                        Task { await addSeries() }
+                    } label: {
+                        Label(isAdding ? "Añadiendo…" : "Añadir serie", systemImage: "calendar.badge.plus")
+                    }
+                    .disabled(isAdding)
+                }
+                
+                if let infoText, !infoText.isEmpty {
+                    Text(infoText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             Section("Notas") {
@@ -228,13 +337,11 @@ private struct MedicationDetailView: View {
         save()
     }
     
-    // MARK: - Frecuencia inferida (igual criterio que en la lista)
+    // MARK: - Inferencia y parsing de frecuencia
     private func inferredFrequency(for med: Medication) -> String? {
-        // 1) RRULE si existe
         if let rule = med.rrule, let fromRule = format(rrule: rule) {
             return fromRule
         }
-        // 2) Intervalo entre tomas de la misma serie (mismo base)
         guard let petID = med.pet?.id else { return nil }
         let base = DoseSeries.splitDoseBase(from: med.name)
         
@@ -307,6 +414,290 @@ private struct MedicationDetailView: View {
         } else {
             let months = Int((interval / month).rounded())
             return months <= 1 ? "cada mes" : "cada \(months) meses"
+        }
+    }
+    
+    // Convierte “cada X …” a segundos
+    private func parseFrequencyToInterval(_ freq: String) -> TimeInterval? {
+        let lower = freq.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if lower == "cada día" { return 24 * 3600 }
+        if lower == "cada semana" { return 7 * 24 * 3600 }
+        if lower == "cada mes" { return 30 * 24 * 3600 }
+        let parts = lower.split(separator: " ")
+        if parts.count >= 3, parts[0] == "cada", let value = Double(parts[1]) {
+            let unitStr = parts[2]
+            if unitStr.hasPrefix("h") { return value * 3600 }
+            if unitStr.hasPrefix("d") { return value * 24 * 3600 }
+            if unitStr.hasPrefix("semana") { return value * 7 * 24 * 3600 }
+            if unitStr.hasPrefix("mes") { return value * 30 * 24 * 3600 }
+        }
+        return nil
+    }
+    
+    // MARK: - Siguiente dosis sugerida (independiente de controles)
+    private func suggestedNextDoseDate() -> Date? {
+        guard let petID = med.pet?.id else { return nil }
+        let base = DoseSeries.splitDoseBase(from: med.name)
+        
+        // Todos los hermanos por fecha ascendente
+        let all = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
+        let siblings = all
+            .filter { $0.pet?.id == petID && DoseSeries.splitDoseBase(from: $0.name) == base }
+            .sorted { $0.date < $1.date }
+        guard let last = siblings.last else { return nil }
+        
+        // 1) Si hay al menos 2, usar intervalo entre las dos últimas
+        if siblings.count >= 2 {
+            let prev = siblings[siblings.count - 2]
+            let delta = last.date.timeIntervalSince(prev.date)
+            if delta > 0 {
+                return last.date.addingTimeInterval(delta)
+            }
+        }
+        // 2) Si solo hay una, intenta parsear frecuencia guardada o inferida
+        let freqStr = med.frequency.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let seconds = parseFrequencyToInterval(freqStr), seconds > 0 {
+            return last.date.addingTimeInterval(seconds)
+        }
+        if let inferred = inferredFrequency(for: med),
+           let seconds = parseFrequencyToInterval(inferred), seconds > 0 {
+            return last.date.addingTimeInterval(seconds)
+        }
+        // 3) Fallback: +8 h
+        return last.date.addingTimeInterval(8 * 3600)
+    }
+    
+    // MARK: - Helpers de programación (locales a esta vista)
+    private func addInterval(_ value: Int, unit: IntervalUnit, to date: Date) -> Date {
+        let cal = Calendar.current
+        switch unit {
+        case .hours:  return cal.date(byAdding: .hour,  value: value, to: date) ?? date
+        case .days:   return cal.date(byAdding: .day,   value: value, to: date) ?? date
+        case .weeks:  return cal.date(byAdding: .day,   value: 7 * value, to: date) ?? date
+        case .months: return cal.date(byAdding: .month, value: value, to: date) ?? date
+        }
+    }
+    
+    private func medicationPreview(start: Date,
+                                   mode: ScheduleMode,
+                                   intervalValue: Int,
+                                   intervalUnit: IntervalUnit,
+                                   durationDays: Int,
+                                   timesPerDay: Int) -> [Date]? {
+        let cal = Calendar.current
+        switch mode {
+        case .interval:
+            let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
+            var dates: [Date] = [start]
+            var current = start
+            while true {
+                let next = addInterval(intervalValue, unit: intervalUnit, to: current)
+                if next > end { break }
+                dates.append(next)
+                current = next
+            }
+            return dates
+        case .perDay:
+            let total = max(1, timesPerDay * durationDays)
+            let stepHours = Int((24.0 / max(1.0, Double(timesPerDay))).rounded())
+            var dates: [Date] = [start]
+            var current = start
+            if total > 1 {
+                for _ in 1..<total {
+                    current = cal.date(byAdding: .hour, value: stepHours, to: current) ?? current
+                    dates.append(current)
+                }
+            }
+            return dates
+        }
+    }
+    
+    private func intervalSummary(start: Date,
+                                 durationDays: Int,
+                                 stepValue: Int,
+                                 stepUnit: IntervalUnit) -> (total: Int, last: Date)? {
+        let cal = Calendar.current
+        let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
+        var current = start
+        var last = start
+        var count = 1
+        while true {
+            let next = addInterval(stepValue, unit: stepUnit, to: current)
+            if next > end { break }
+            last = next
+            count += 1
+            current = next
+        }
+        return (count, last)
+    }
+    
+    // MARK: - Inserción y utilidades de serie
+    private func existsMedication(petID: UUID, baseName: String, date: Date) -> Bool {
+        let predicate = #Predicate<Medication> { m in
+            m.pet?.id == petID && m.date == date
+        }
+        let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
+        return fetched.contains { DoseSeries.splitDoseBase(from: $0.name) == baseName }
+    }
+    
+    private func scheduleNotification(for med: Medication) {
+        let title = "Medicamento"
+        let body = "\(med.pet?.name ?? "") – \(med.name)"
+        NotificationManager.shared.scheduleNotification(id: med.id, title: title, body: body, fireDate: med.date, advance: 0)
+    }
+    
+    private func relabelSeries(base: String, siblings: [Medication]) {
+        // Reetiqueta todos como "(dosis i/N)" en orden cronológico ascendente
+        let sorted = siblings.sorted { $0.date < $1.date }
+        let total = sorted.count
+        for (i, item) in sorted.enumerated() {
+            let label = "dosis \(i + 1)/\(total)"
+            item.name = "\(base) (\(label))"
+        }
+    }
+    
+    // Añadir una sola próxima dosis basada en la serie/frecuencia (intuitivo)
+    @MainActor
+    private func addNextDoseSmart() async {
+        guard let pet = med.pet, let petID = pet.id as UUID? else { return }
+        isAdding = true
+        defer { isAdding = false }
+        
+        // Calcular próxima fecha sugerida
+        let next = suggestedNextDoseDate() ?? med.date.addingTimeInterval(8 * 3600)
+        
+        let base = DoseSeries.splitDoseBase(from: med.name)
+        if existsMedication(petID: petID, baseName: base, date: next) {
+            infoText = "Ya existe una dosis en la fecha sugerida."
+            return
+        }
+        
+        // Reunir hermanos actuales
+        let allForPet = (try? context.fetch(FetchDescriptor<Medication>()))?.filter { $0.pet?.id == petID } ?? []
+        var siblings = allForPet.filter { DoseSeries.splitDoseBase(from: $0.name) == base }
+        
+        // Insertar nueva
+        let newMed = Medication(date: next,
+                                pet: pet,
+                                name: base, // temporal, reetiquetamos abajo
+                                dosage: med.dosage,
+                                frequency: med.frequency,
+                                notes: med.notes,
+                                prescriptionImageData: med.prescriptionImageData)
+        context.insert(newMed)
+        siblings.append(newMed)
+        
+        // Reetiquetar toda la serie (incluida la actual) como dosis i/N
+        relabelSeries(base: base, siblings: siblings)
+        
+        scheduleNotification(for: newMed)
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        infoText = "Se añadió la siguiente dosis."
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+    
+    @MainActor
+    private func addSeries() async {
+        guard let pet = med.pet, let petID = pet.id as UUID? else { return }
+        isAdding = true
+        defer { isAdding = false }
+        
+        // Genera previsualización (incluye la actual)
+        let preview = medicationPreview(start: med.date,
+                                        mode: scheduleMode,
+                                        intervalValue: intervalValue,
+                                        intervalUnit: intervalUnit,
+                                        durationDays: durationDays,
+                                        timesPerDay: timesPerDay) ?? [med.date]
+        // Omitimos la primera (es la actual); el resto serán nuevas
+        let newDates = Array(preview.dropFirst())
+        if newDates.isEmpty {
+            infoText = "No hay fechas adicionales que añadir."
+            return
+        }
+        
+        let base = DoseSeries.splitDoseBase(from: med.name)
+        let allForPet = (try? context.fetch(FetchDescriptor<Medication>()))?.filter { $0.pet?.id == petID } ?? []
+        var siblings = allForPet.filter { DoseSeries.splitDoseBase(from: $0.name) == base }
+        
+        // Evita duplicados y acumula las que sí se insertan
+        var inserted: [Medication] = []
+        for d in newDates {
+            if !existsMedication(petID: petID, baseName: base, date: d) {
+                let m = Medication(date: d,
+                                   pet: pet,
+                                   name: base, // temporal
+                                   dosage: med.dosage,
+                                   frequency: med.frequency,
+                                   notes: med.notes,
+                                   prescriptionImageData: med.prescriptionImageData)
+                context.insert(m)
+                inserted.append(m)
+                scheduleNotification(for: m)
+            }
+        }
+        if inserted.isEmpty {
+            infoText = "Todas las fechas calculadas ya existían."
+            return
+        }
+        
+        siblings.append(contentsOf: inserted)
+        relabelSeries(base: base, siblings: siblings)
+        
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        infoText = "Se añadieron \(inserted.count) dosis."
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+    
+    // MARK: – UI subcomponentes locales
+    private struct IntervalRow: View {
+        @Binding var value: Int
+        @Binding var unit: IntervalUnit
+        var body: some View {
+            HStack(spacing: 12) {
+                Text("Cada")
+                    .foregroundStyle(.secondary)
+                
+                Text("\(value)")
+                    .font(.body.monospacedDigit())
+                
+                Picker(selection: $unit) {
+                    ForEach(IntervalUnit.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                } label: {
+                    Text(unit.label)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(minWidth: 80)
+                
+                Spacer()
+                
+                Stepper("", value: $value, in: 1...30)
+                    .labelsHidden()
+            }
+        }
+    }
+    
+    private struct MedicationPreviewView: View {
+        let dates: [Date]
+        var body: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Previsualización").font(.headline)
+                ForEach(Array(dates.enumerated()), id: \.offset) { idx, d in
+                    HStack {
+                        Text("Dosis \(idx + 1)")
+                        Spacer()
+                        Text(d.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    .font(.caption)
+                }
+            }
         }
     }
 }
@@ -793,24 +1184,11 @@ private enum EventDetailPreviewData {
     
     let med = Medication(date: Date().addingTimeInterval(3600),
                          pet: pet,
-                         name: "Amoxicilina (dosis 1/3)",
+                         name: "Amoxicilina",
                          dosage: "250 mg",
                          frequency: "",
                          notes: "Tomar con comida")
-    // Creamos futuras tomas para que la inferencia muestre “cada 8 h”
-    let med2 = Medication(date: Date().addingTimeInterval(3600*9),
-                          pet: pet,
-                          name: "Amoxicilina (dosis 2/3)",
-                          dosage: "250 mg",
-                          frequency: "")
-    let med3 = Medication(date: Date().addingTimeInterval(3600*17),
-                          pet: pet,
-                          name: "Amoxicilina (dosis 3/3)",
-                          dosage: "250 mg",
-                          frequency: "")
     ctx.insert(med)
-    ctx.insert(med2)
-    ctx.insert(med3)
     try? ctx.save()
     
     return NavigationStack {

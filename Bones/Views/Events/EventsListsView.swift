@@ -41,7 +41,8 @@ struct EventsListView: View {
                     ContentUnavailableView("Sin eventos próximos",
                                            systemImage: "calendar")
                 } else {
-                    ForEach(vm.sections) { section in
+                    // Añadimos un id explícito para evitar inferencias costosas
+                    ForEach(vm.sections, id: \.title) { section in
                         Section(section.title) {
                             ForEach(section.items, id: \.id) { event in
                                 NavigationLink {
@@ -79,37 +80,9 @@ struct EventsListView: View {
                     .accessibilityLabel("Nuevo evento")
                 }
                 
-                // Botón de filtros existente
+                // Botón de filtros extraído a un sub‑view para simplificar el árbol
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Toggle("Mostrar completados", isOn: $vm.showPast)
-                        // ----------------- Filtro por mascota -----------------
-                        Section("Mascota") {
-                            Picker("Mascota", selection: $vm.petFilter) {
-                                // “Todas” (sin filtro)
-                                Label("Todas", systemImage: "pawprint").tag(PetFilter.all)
-                                // Generar una opción por cada mascota
-                                ForEach(vm.allPets) { pet in
-                                    Label(pet.name, systemImage: "pawprint.fill")
-                                        .tag(PetFilter(id: pet.id, name: pet.name))
-                                }
-                            }
-                            .pickerStyle(.inline)   // Muestra las filas directamente dentro del menú
-                        }
-                        
-                        // ----------------- Filtro por tipo -----------------
-                        Section("Tipo de evento") {
-                            Picker("Tipo", selection: $vm.filter) {
-                                ForEach(EventTypeFilter.allCases) {
-                                    Label($0.rawValue, systemImage: $0.icon).tag($0)
-                                }
-                            }
-                            .pickerStyle(.inline)
-                        }
-                    } label: {
-                        // Icono único para los filtros
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                    }
+                    FiltersMenu(vm: vm)
                 }
             }
             .refreshable { vm.fetchAllEvents() }  // pull-to-refresh
@@ -317,6 +290,45 @@ struct EventsListView: View {
     }
 }
 
+// MARK: - Filtros (sub‑view para simplificar el árbol del toolbar)
+private struct FiltersMenu: View {
+    @ObservedObject var vm: EventsListViewModel
+    
+    var body: some View {
+        Menu {
+            // Mostrar vencidos y completados (según el nuevo VM)
+            Toggle("Mostrar vencidos", isOn: $vm.showOverdue)
+            Toggle("Incluir completados", isOn: $vm.includeCompletedPast)
+            
+            // ----------------- Filtro por mascota -----------------
+            Section("Mascota") {
+                Picker("Mascota", selection: $vm.petFilter) {
+                    // “Todas” (sin filtro)
+                    Label("Todas", systemImage: "pawprint").tag(PetFilter.all)
+                    // Generar una opción por cada mascota
+                    ForEach(vm.allPets) { pet in
+                        Label(pet.name, systemImage: "pawprint.fill")
+                            .tag(PetFilter(id: pet.id, name: pet.name))
+                    }
+                }
+                .pickerStyle(.inline)
+            }
+            
+            // ----------------- Filtro por tipo -----------------
+            Section("Tipo de evento") {
+                Picker("Tipo", selection: $vm.filter) {
+                    ForEach(EventTypeFilter.allCases) {
+                        Label($0.rawValue, systemImage: $0.icon).tag($0)
+                    }
+                }
+                .pickerStyle(.inline)
+            }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+        }
+    }
+}
+
 // MARK: - Fila reutilizable (solo UI; los swipes están en el padre)
 private struct EventRow: View {
     let event: any BasicEvent
@@ -355,6 +367,9 @@ private struct EventRow: View {
     
     var body: some View {
         let parsed = splitDose(from: event.displayName)
+        let now = Date()
+        let cal = Calendar.current
+        let isOverdueToday = !event.isCompleted && cal.isDateInToday(event.date) && event.date < now
         
         HStack(spacing: 12) {
             // ---------- Miniatura ----------
@@ -378,8 +393,18 @@ private struct EventRow: View {
             
             // ---------- Texto ----------
             VStack(alignment: .leading, spacing: 2) {
-                Text(parsed.base)
-                    .fontWeight(.semibold)
+                HStack(spacing: 6) {
+                    Text(parsed.base)
+                        .fontWeight(.semibold)
+                    if isOverdueToday {
+                        Text("Vencido")
+                            .font(.caption2)
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, 6)
+                            .background(Capsule().fill(Color.red.opacity(0.15)))
+                            .foregroundStyle(.red)
+                    }
+                }
                 
                 if let doseLabel = parsed.dose {
                     Text(doseLabel)
@@ -391,7 +416,7 @@ private struct EventRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
-                Text(event.date, format: .dateTime.day().month().hour().minute())
+                Text(event.date, format: .dateTime.day().month().year().hour().minute())
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -531,6 +556,14 @@ extension Calendar {
         .modelContainer(container)
 }
 
+// Nuevo preview con eventos vencidos realistas y futuros
+#Preview("EventsListView – Vencidos variados") {
+    let container = PreviewData.makeContainer()
+    PreviewData.seedOverdueScenario(in: container)
+    return EventsListViewPreviewHost()
+        .modelContainer(container)
+}
+
 // Host para pasar el mismo ModelContext de entorno al init(context:)
 private struct EventsListViewPreviewHost: View {
     @Environment(\.modelContext) private var context
@@ -549,7 +582,7 @@ private enum PreviewData {
             Deworming.self,
             WeightEntry.self,
             Grooming.self
-        ])
+        ] as [any PersistentModel.Type])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: config)
     }
@@ -643,5 +676,71 @@ private enum PreviewData {
         
         try? ctx.save()
     }
+    
+    // Nuevo dataset: mezcla de vencidos (hoy, ayer, semana, mes, más antiguos) y futuros
+    static func seedOverdueScenario(in container: ModelContainer) {
+        let ctx = ModelContext(container)
+        let cal = Calendar.current
+        let now = Date()
+        
+        let loki = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
+        let mishi = Pet(name: "Mishi", species: .gato, breed: "Común", sex: .female)
+        ctx.insert(loki)
+        ctx.insert(mishi)
+        
+        func at(hour: Int, minute: Int, on base: Date) -> Date {
+            var comps = cal.dateComponents([.year, .month, .day], from: base)
+            comps.hour = hour
+            comps.minute = minute
+            return cal.date(from: comps) ?? base
+        }
+        
+        // Vencidos de HOY (más temprano)
+        let todayEarly = now.addingTimeInterval(-2 * 3600) // hace 2 horas
+        let medTodayPast = Medication(date: todayEarly, pet: loki, name: "Omeprazol", dosage: "10 mg", frequency: "cada día")
+        
+        // Ayer
+        let yesterdayBase = cal.date(byAdding: .day, value: -1, to: now)!
+        let yesterday10am = at(hour: 10, minute: 0, on: yesterdayBase)
+        let vacYesterday = Vaccine(date: yesterday10am, pet: mishi, vaccineName: "Rabia", manufacturer: "VetLabs")
+        
+        // Última semana (no ayer)
+        let threeDaysAgo = cal.date(byAdding: .day, value: -3, to: now)!
+        let dewLastWeek = Deworming(date: at(hour: 9, minute: 30, on: threeDaysAgo), pet: loki, notes: "Tableta mensual")
+        
+        // Último mes (entre 7 días y 1 mes)
+        let twentyDaysAgo = cal.date(byAdding: .day, value: -20, to: now)!
+        let groomLastMonth = Grooming(date: at(hour: 16, minute: 0, on: twentyDaysAgo), pet: mishi, location: "Pet Spa", notes: "Corte y baño")
+        
+        // Más antiguos (más de 1 mes)
+        let fiftyDaysAgo = cal.date(byAdding: .day, value: -50, to: now)!
+        let weightOlder = WeightEntry(date: at(hour: 8, minute: 15, on: fiftyDaysAgo), pet: loki, weightKg: 22.4, notes: "Control general")
+        
+        // Futuros: mañana, próxima semana, próximo mes
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: now)!
+        let nextWeek = cal.date(byAdding: .day, value: 7, to: now)!
+        let nextMonth = cal.date(byAdding: .month, value: 1, to: now)!
+        
+        let medTomorrow = Medication(date: at(hour: 19, minute: 0, on: tomorrow), pet: loki, name: "Amoxicilina (dosis 1/3)", dosage: "250 mg", frequency: "cada 8 h")
+        let medTomorrow2 = Medication(date: at(hour: 3, minute: 0, on: cal.date(byAdding: .day, value: 1, to: tomorrow)!), pet: loki, name: "Amoxicilina (dosis 2/3)", dosage: "250 mg", frequency: "cada 8 h")
+        let vacNextWeek = Vaccine(date: at(hour: 9, minute: 0, on: nextWeek), pet: mishi, vaccineName: "Moquillo (dosis 1/3)", manufacturer: "PetCare")
+        let dewNextMonth = Deworming(date: at(hour: 11, minute: 30, on: nextMonth), pet: loki, notes: "Tableta mensual")
+        
+        // Marcar algunos pasados como completados para cubrir ambos casos en “Pasados”
+        vacYesterday.isCompleted = true
+        groomLastMonth.isCompleted = true
+        
+        // Insertar
+        ctx.insert(medTodayPast)
+        ctx.insert(vacYesterday)
+        ctx.insert(dewLastWeek)
+        ctx.insert(groomLastMonth)
+        ctx.insert(weightOlder)
+        ctx.insert(medTomorrow)
+        ctx.insert(medTomorrow2)
+        ctx.insert(vacNextWeek)
+        ctx.insert(dewNextMonth)
+        
+        try? ctx.save()
+    }
 }
-

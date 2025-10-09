@@ -210,11 +210,19 @@ struct EventQuickAddSheet: View {
                 }
                 #endif
                 
-                // ---------- Tipo ----------
-                TypeChips
+                // ---------- Tipo (Picker tradicional) ----------
+                Section("Tipo") {
+                    Picker("Tipo", selection: $kind) {
+                        ForEach(EventKind.allCases) { k in
+                            Label(k.rawValue, systemImage: k.icon).tag(k)
+                        }
+                    }
+                    .pickerStyle(.menu) // ← Popup/menú emergente anclado al row
+
+                }
                 
                 // ---------- Detalles ----------
-                Section("Detalles nuevos") { detailsSection }
+                Section("Detalles") { detailsSection }
                 
                 // ---------- Fecha ----------
                 Section("Fecha") {
@@ -339,58 +347,6 @@ struct EventQuickAddSheet: View {
 // MARK: - Sub-vistas UI
 private extension EventQuickAddSheet {
     
-    // Chips con “Desparasitación” como chip virtual cuando estamos en Medicamento+flag
-    var TypeChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                // 1) Chip Medicamento
-                Button {
-                    kind = .medication
-                    isDeworming = false
-                } label: {
-                    Label("Medicamento", systemImage: EventKind.medication.icon)
-                        .font(.subheadline)
-                        .padding(.vertical,6).padding(.horizontal,12)
-                        .background(Capsule().fill(kind == .medication && !isDeworming ? Color.accentColor
-                                                                                     : Color(.systemGray5)))
-                        .foregroundStyle(kind == .medication && !isDeworming ? .white : .primary)
-                }
-                .buttonStyle(.plain)
-                
-                // 2) Chip Desparasitación (virtual)
-                Button {
-                    kind = .medication
-                    isDeworming = true
-                } label: {
-                    Label("Desparasitación", systemImage: "ladybug.fill")
-                        .font(.subheadline)
-                        .padding(.vertical,6).padding(.horizontal,12)
-                        .background(Capsule().fill(kind == .medication && isDeworming ? Color.accentColor
-                                                                                      : Color(.systemGray5)))
-                        .foregroundStyle(kind == .medication && isDeworming ? .white : .primary)
-                }
-                .buttonStyle(.plain)
-                
-                // 3) Resto de tipos reales
-                ForEach([EventKind.vaccine, .grooming, .weight], id: \.self) { k in
-                    Button { 
-                        kind = k
-                        // Al salir de Medicamento, el flag no es relevante
-                        isDeworming = false
-                    } label: {
-                        Label(k.rawValue, systemImage: k.icon)
-                            .font(.subheadline)
-                            .padding(.vertical,6).padding(.horizontal,12)
-                            .background(Capsule().fill(kind == k ? Color.accentColor
-                                                                 : Color(.systemGray5)))
-                            .foregroundStyle(kind == k ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }.padding(.horizontal)
-        }.padding(.vertical,4)
-    }
-    
     @ViewBuilder var detailsSection: some View {
         switch kind {
         case .medication:
@@ -398,19 +354,11 @@ private extension EventQuickAddSheet {
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.sentences)
             
-            // Toggle para tratar como Desparasitación
+            // Toggle para tratar como Desparasitación (también visible en la sección Tipo)
             Toggle("Es un desparasitante?", isOn: $isDeworming)
             
-            // Campos de medicamento (se deshabilitan si es desparasitante)
+            // Campo de dosis (activo incluso cuando es desparasitante; se guardará como nota informativa)
             TextField("Dosis (ej. 10 mg)", text: $dosage)
-                .disabled(isDeworming)
-                .opacity(isDeworming ? 0.5 : 1.0)
-                .autocorrectionDisabled(true)
-                .textInputAutocapitalization(.never)
-            
-            TextField("Frecuencia (ej. cada 8 h)", text: $frequency)
-                .disabled(isDeworming)
-                .opacity(isDeworming ? 0.5 : 1.0)
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.never)
             
@@ -802,8 +750,13 @@ extension EventQuickAddSheet {
         switch kind {
         case .medication:
             if isDeworming {
-                // Notas = título [+ " (dosis X/Y)"]
-                let notes = doseLabel.map { "\(title) (\($0))" } ?? title
+                // Notas = título [+ dosis informativa] [+ " (dosis X/Y)"]
+                var base = title
+                let trimmedDose = dosage.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedDose.isEmpty {
+                    base += " – \(trimmedDose)"
+                }
+                let notes = doseLabel.map { "\(base) (\($0))" } ?? base
                 let d = Deworming(date: date, pet: pet, notes: notes, prescriptionImageData: nil, seriesID: dewormSeriesID)
                 d.rrule = rrule
                 d.isRecurring = (rrule != nil)
@@ -950,7 +903,7 @@ extension EventQuickAddSheet {
                     }
                 }
             } else {
-                // Manual: usar fechas provistas (sin etiquetar automáticamente)
+                // Modo manual: usar fechas provistas (sin etiquetar automáticamente)
                 for dose in vaccineDoses.sorted(by: { $0.date < $1.date }) {
                     insertEvent(on: dose.date, doseLabel: nil)
                 }
@@ -1113,8 +1066,8 @@ private extension EventQuickAddSheet {
         if boostersEnabled {
             let starts = generateBoosterStarts(start: start,
                                                rounds: boosterRounds,
-                                               freqValue: boosterFreqValue,
-                                               freqUnit: boosterFreqUnit)
+                                               freqValue: boosterFrequencyValue,
+                                               freqUnit: boosterFrequencyUnit)
             for s in starts {
                 if boosterIncludesSeries {
                     let r = generateSeries(start: s,
@@ -1289,7 +1242,7 @@ private extension EventQuickAddSheet {
                 // Duración por defecto: 1 día cuando son horas; 7 días si es en días; el usuario puede ajustar
                 switch unit {
                 case .hours:  durationDays = 1
-                case .days:   durationDays = max(1, val)  // “cada 1/2 días” → al menos 1 día
+                case .days:   durationDays = max(1, val)
                 case .weeks:  durationDays = 7 * max(1, val)
                 case .months: durationDays = 30 * max(1, val)
                 }
@@ -1335,8 +1288,7 @@ private extension EventQuickAddSheet {
             dosage = e.dosage ?? ""
             frequency = e.frequency ?? ""
         case .deworming:
-            // Tratado como medicamento “desparasitante”
-            dosage = "" // normal en desparasitación
+            dosage = ""
             frequency = e.frequency ?? ""
         case .vaccine:
             manufacturer = e.manufacturer ?? ""
@@ -1351,7 +1303,7 @@ private extension EventQuickAddSheet {
         switch k {
         case .vaccine:    return (.vaccine, false)
         case .medication: return (.medication, false)
-        case .deworming:  return (.medication, true)   // UI de medicamento con flag de desparasitación
+        case .deworming:  return (.medication, true)
         case .grooming:   return (.grooming, false)
         case .weight:     return (.weight, false)
         }
@@ -1359,13 +1311,10 @@ private extension EventQuickAddSheet {
     
     func parseFrequencyToInterval(_ freq: String) -> (Int, IntervalUnit)? {
         let lower = freq.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        // Formatos esperados: “cada 8 h”, “cada día”, “cada 2 días”, “cada 3 semanas”, “cada mes”, “cada 2 meses”
         if lower == "cada día" { return (1, .days) }
         if lower == "cada semana" { return (1, .weeks) }
         if lower == "cada mes" { return (1, .months) }
-        // “cada X h/días/semanas/meses”
         let parts = lower.split(separator: " ")
-        // ej: ["cada","8","h"]  o ["cada","2","días"]
         if parts.count >= 3, parts[0] == "cada", let value = Int(parts[1]) {
             let unitStr = parts[2]
             if unitStr.hasPrefix("h") { return (value, .hours) }
@@ -1380,10 +1329,8 @@ private extension EventQuickAddSheet {
         isSuggesting = true
         defer { isSuggesting = false }
         
-        // Determinar “source” para proponer: lastParsed o UI actual
         let proposed: ProposedEvent = {
             if let p = lastParsed { return p }
-            // Mapear desde UI
             let pkind: ProposedEventKind = {
                 switch kind {
                 case .medication: return isDeworming ? .deworming : .medication
@@ -1404,8 +1351,7 @@ private extension EventQuickAddSheet {
         
         switch proposed.kind {
         case .medication:
-            guard !isDeworming else { return } // desparasitación usa RRULE/otra lógica
-            // Intentar extraer intervalo de la frecuencia
+            guard !isDeworming else { return }
             let parsed = parseFrequencyToInterval(proposed.frequency ?? "")
             let hoursInterval: Int? = {
                 guard let p = parsed else { return nil }
@@ -1422,7 +1368,6 @@ private extension EventQuickAddSheet {
                                                                dosage: proposed.dosage,
                                                                hoursInterval: hoursInterval,
                                                                totalDoses: nil)
-            // Precargar controles: intervalo/duración aproximada
             let dates = series.map { $0.date }
             if dates.count >= 2 {
                 let delta = dates[1].timeIntervalSince(dates[0])
@@ -1431,11 +1376,9 @@ private extension EventQuickAddSheet {
                 scheduleMode = .interval
                 intervalValue = val
                 intervalUnit = unit
-                // duración: diferencia entre primera y última en días (redondeo hacia arriba, mínimo 1)
                 let days = max(1, Int(ceil(dates.last!.timeIntervalSince(dates[0]) / (24*3600))))
                 durationDays = days
             } else {
-                // Serie de 1: activar al menos 1 día con el intervalo detectado (o 8h por defecto)
                 scheduleEnabled = true
                 scheduleMode = .interval
                 intervalValue = parsed?.0 ?? 8
@@ -1450,23 +1393,20 @@ private extension EventQuickAddSheet {
                                                                dosage: nil,
                                                                hoursInterval: nil,
                                                                totalDoses: nil)
-            // Derivar espaciamiento y número de dosis extra
             let dates = series.map { $0.date }.sorted()
             if dates.count >= 2 {
                 let delta = dates[1].timeIntervalSince(dates[0])
                 let (val, unit) = bestUnitAndValue(for: delta)
                 vaccineMode = .automatic
                 scheduleEnabled = true
-                vaccineSeriesDoseCount = max(1, dates.count - 1) // "extra"
+                vaccineSeriesDoseCount = max(1, dates.count - 1)
                 vaccineSeriesSpacingValue = val
-                vaccineSeriesSpacingUnit = unit == .days ? .weeks : unit // para vacunas solemos usar semanas/meses
-                // Refuerzo sugerido anual por defecto
+                vaccineSeriesSpacingUnit = unit == .days ? .weeks : unit
                 boostersEnabled = true
                 boosterFrequencyValue = 12
                 boosterFrequencyUnit = .months
                 boosterRoundsCount = 1
             } else {
-                // No reconoció esquema: activa automático con 2 extras a 3 semanas
                 vaccineMode = .automatic
                 scheduleEnabled = true
                 vaccineSeriesDoseCount = 2
@@ -1479,11 +1419,9 @@ private extension EventQuickAddSheet {
             }
             
         case .grooming, .weight, .deworming:
-            // No sugerimos serie aquí
             break
         }
         
-        // Feedback háptico leve
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
     
