@@ -57,16 +57,21 @@ struct EventQuickAddSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     
+    // Guardamos los parámetros para sincronización defensiva
+    private let initialKindParam: EventKind
+    private let initialIsDewormingParam: Bool
+    
     // Init
     init(pet: Pet, initialKind: EventKind = .medication, isDewormingInitial: Bool = false) {
         self.pet = pet
+        self.initialKindParam = initialKind
+        self.initialIsDewormingParam = (initialKind == .medication) ? isDewormingInitial : false
+        
         _kind = State(initialValue: initialKind)
-        // Solo tiene sentido preactivar el toggle si estamos en la UI de medicamento
-        if initialKind == .medication {
-            _isDeworming = State(initialValue: isDewormingInitial)
-        } else {
-            _isDeworming = State(initialValue: false)
-        }
+        _isDeworming = State(initialValue: (initialKind == .medication) ? isDewormingInitial : false)
+        
+        // DEBUG
+        print("[QuickAddSheet.init] initialKind=\(initialKind) isDew=\(isDewormingInitial)")
     }
     
     // ----------------- Estado -----------------
@@ -184,7 +189,7 @@ struct EventQuickAddSheet: View {
                                     await suggestSeries()
                                 }
                             } label: {
-                                Label(isSuggesting ? "Sugiriendo…" : "Sugerir serie", systemImage: "calendar.badge.plus")
+                                Label(isSuggesting ? "Sugerir…" : "Sugerir serie", systemImage: "calendar.badge.plus")
                             }
                             .disabled(isSuggesting || !canSuggestSeries)
                             
@@ -209,7 +214,7 @@ struct EventQuickAddSheet: View {
                 TypeChips
                 
                 // ---------- Detalles ----------
-                Section("Detalles") { detailsSection }
+                Section("Detalles nuevos") { detailsSection }
                 
                 // ---------- Fecha ----------
                 Section("Fecha") {
@@ -285,10 +290,31 @@ struct EventQuickAddSheet: View {
                 }
             }
             .onAppear {
+                // Sincronización defensiva del estado con los parámetros recibidos
+                if kind != initialKindParam {
+                    print("[QuickAddSheet.onAppear] Resync kind \(kind) → \(initialKindParam)")
+                    kind = initialKindParam
+                }
+                if initialKindParam == .medication {
+                    if isDeworming != initialIsDewormingParam {
+                        print("[QuickAddSheet.onAppear] Resync isDeworming \(isDeworming) → \(initialIsDewormingParam)")
+                        isDeworming = initialIsDewormingParam
+                    }
+                } else if isDeworming {
+                    print("[QuickAddSheet.onAppear] Clear isDeworming because kind != .medication")
+                    isDeworming = false
+                }
+                
                 if kind == .weight { prefillWeight() }
+                
+                print("[QuickAddSheet.onAppear] kind=\(kind) isDew=\(isDeworming)")
             }
             .onChange(of: kind) { _, newKind in
                 if newKind == .weight { prefillWeight() }
+                // Si cambiamos a otro tipo, limpiar flag de desparasitación salvo que sigamos en Medicamento
+                if newKind != .medication && isDeworming {
+                    isDeworming = false
+                }
             }
             .onChange(of: eventDate) { _, _ in
                 if kind == .weight && !isSettingEventDateProgrammatically {
@@ -313,11 +339,45 @@ struct EventQuickAddSheet: View {
 // MARK: - Sub-vistas UI
 private extension EventQuickAddSheet {
     
+    // Chips con “Desparasitación” como chip virtual cuando estamos en Medicamento+flag
     var TypeChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(EventKind.allCases) { k in
-                    Button { kind = k } label: {
+                // 1) Chip Medicamento
+                Button {
+                    kind = .medication
+                    isDeworming = false
+                } label: {
+                    Label("Medicamento", systemImage: EventKind.medication.icon)
+                        .font(.subheadline)
+                        .padding(.vertical,6).padding(.horizontal,12)
+                        .background(Capsule().fill(kind == .medication && !isDeworming ? Color.accentColor
+                                                                                     : Color(.systemGray5)))
+                        .foregroundStyle(kind == .medication && !isDeworming ? .white : .primary)
+                }
+                .buttonStyle(.plain)
+                
+                // 2) Chip Desparasitación (virtual)
+                Button {
+                    kind = .medication
+                    isDeworming = true
+                } label: {
+                    Label("Desparasitación", systemImage: "ladybug.fill")
+                        .font(.subheadline)
+                        .padding(.vertical,6).padding(.horizontal,12)
+                        .background(Capsule().fill(kind == .medication && isDeworming ? Color.accentColor
+                                                                                      : Color(.systemGray5)))
+                        .foregroundStyle(kind == .medication && isDeworming ? .white : .primary)
+                }
+                .buttonStyle(.plain)
+                
+                // 3) Resto de tipos reales
+                ForEach([EventKind.vaccine, .grooming, .weight], id: \.self) { k in
+                    Button { 
+                        kind = k
+                        // Al salir de Medicamento, el flag no es relevante
+                        isDeworming = false
+                    } label: {
                         Label(k.rawValue, systemImage: k.icon)
                             .font(.subheadline)
                             .padding(.vertical,6).padding(.horizontal,12)
@@ -1326,7 +1386,7 @@ private extension EventQuickAddSheet {
             // Mapear desde UI
             let pkind: ProposedEventKind = {
                 switch kind {
-                case .medication: return .medication
+                case .medication: return isDeworming ? .deworming : .medication
                 case .vaccine:    return .vaccine
                 case .grooming:   return .grooming
                 case .weight:     return .weight
@@ -1457,4 +1517,3 @@ private extension Double {
             .modelContainer(for: Pet.self, inMemory: true)
     }
 }
-

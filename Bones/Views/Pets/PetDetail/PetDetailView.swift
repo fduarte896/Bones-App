@@ -23,7 +23,6 @@ struct PetDetailView: View {
     
     // Picker interno
     @State private var selectedTab: DetailTab = .upcoming
-    @State private var showingQuickAdd = false
 
     @State private var selectedItem: PhotosPickerItem?
     @State private var showingRemoveAlert = false
@@ -38,9 +37,10 @@ struct PetDetailView: View {
     // Inicializador para inyectar el ViewModel
     init(pet: Pet) {
         self.pet = pet
-        _viewModel = StateObject(
-            wrappedValue: PetDetailViewModel(petID: pet.id)   // aún sin contexto
-        )
+        // Break up the expression to help the type-checker
+        let id: UUID = pet.id
+        let vm = PetDetailViewModel(petID: id)
+        _viewModel = StateObject(wrappedValue: vm)   // aún sin contexto
     }
     
     var body: some View {
@@ -211,21 +211,24 @@ struct PetDetailView: View {
                             }
                         }
                     }()
-                    // Guardamos la intención en un closure dentro de onPresent
-                    quickAddIntent = (initialKind, isDewormingInitial)
-                    showingQuickAdd = true
+                    // DEBUG: log de intención calculada
+                    print("[QuickAdd] Intent from tab=\(selectedTab) segment=\(healthSegment) → kind=\(initialKind) deworm=\(isDewormingInitial)")
+                    // Abrimos la hoja con un item identificable (evita condiciones de carrera)
+                    quickAddConfig = QuickAddConfig(kind: initialKind, isDeworming: isDewormingInitial)
                 } label: {
                     Label("Nuevo evento", systemImage: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showingQuickAdd, onDismiss: {
+        .sheet(item: $quickAddConfig, onDismiss: {
             viewModel.fetchEvents()          // refresca la lista al volver
-        }) {
-            // Usa la intención calculada para abrir la hoja
+        }) { config in
             EventQuickAddSheet(pet: pet,
-                               initialKind: quickAddIntent.kind,
-                               isDewormingInitial: quickAddIntent.isDeworming)
+                               initialKind: config.kind,
+                               isDewormingInitial: config.isDeworming)
+            .onAppear {
+                print("[QuickAdd] Sheet onAppear with intent kind=\(config.kind) deworm=\(config.isDeworming)")
+            }
         }
         .sheet(isPresented: $isPresentingEdit) {
             EditPetSheet(pet: pet)
@@ -233,10 +236,22 @@ struct PetDetailView: View {
 
         // Inyectamos el context real en el ViewModel al aparecer
         .onAppear { viewModel.inject(context: context) }
+        // DEBUG: trazas de navegación entre tabs/subtabs
+        .onChange(of: selectedTab) { old, new in
+            print("[QuickAdd] selectedTab \(old) → \(new)")
+        }
+        .onChange(of: healthSegment) { old, new in
+            print("[QuickAdd] healthSegment \(old) → \(new)")
+        }
     }
     
-    // Intención calculada para Quick Add
-    @State private var quickAddIntent: (kind: EventKind, isDeworming: Bool) = (.medication, false)
+    // QuickAdd: modelo identificable para .sheet(item:)
+    struct QuickAddConfig: Identifiable, Equatable {
+        let id = UUID()
+        let kind: EventKind
+        let isDeworming: Bool
+    }
+    @State private var quickAddConfig: QuickAddConfig?
 }
 
 // MARK: - Enum de tabs
@@ -289,4 +304,3 @@ private func ageString(for birth: Date?) -> String? {
     )
     PetDetailView(pet: samplePet)
 }
-
