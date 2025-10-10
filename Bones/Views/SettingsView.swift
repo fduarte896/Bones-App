@@ -29,6 +29,10 @@ struct SettingsView: View {
     @AppStorage("themeMode") private var theme: ThemeMode = .system
     @AppStorage("defaultLeadTime") private var leadTime: Int = 60   // minutos
     
+    // Moneda global de la app
+    // "AUTO" = usar Locale del dispositivo
+    @AppStorage("appCurrencyCode") private var appCurrencyCode: String = (Locale.current.currency?.identifier ?? "USD")
+    
     // Calcula versión y build
     private var versionString: String {
         let dict = Bundle.main.infoDictionary
@@ -36,6 +40,18 @@ struct SettingsView: View {
         let build = dict?["CFBundleVersion"] as? String ?? "–"
         return "\(ver) (\(build))"
     }
+    
+    // Lista de monedas comunes (puedes ampliar)
+    private let currencyOptions: [(code: String, name: String)] = [
+        ("AUTO", "Automática (según región)"),
+        ("USD", "USD – Dólar estadounidense"),
+        ("EUR", "EUR – Euro"),
+        ("COP", "COP – Peso colombiano"),
+        ("MXN", "MXN – Peso mexicano"),
+        ("ARS", "ARS – Peso argentino"),
+        ("CLP", "CLP – Peso chileno"),
+        ("PEN", "PEN – Sol peruano")
+    ]
     
     var body: some View {
         NavigationStack {
@@ -45,6 +61,12 @@ struct SettingsView: View {
                     Picker("Tema", selection: $theme) {
                         ForEach(ThemeMode.allCases) { mode in
                             Text(mode.label).tag(mode)
+                        }
+                    }
+                    
+                    Picker("Moneda", selection: $appCurrencyCode) {
+                        ForEach(currencyOptions, id: \.code) { opt in
+                            Text(opt.name).tag(opt.code)
                         }
                     }
                 }
@@ -84,3 +106,4 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
 }
+

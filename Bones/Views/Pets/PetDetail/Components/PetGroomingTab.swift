@@ -11,9 +11,56 @@ import SwiftData
 struct PetGroomingTab: View {
     @ObservedObject var viewModel: PetDetailViewModel
     @Environment(\.modelContext) private var context
+    @AppStorage("appCurrencyCode") private var appCurrencyCode: String = (Locale.current.currency?.identifier ?? "USD")
     
     private var currencyCode: String {
-        Locale.current.currency?.identifier ?? "USD"
+        if appCurrencyCode == "AUTO" {
+            return Locale.current.currency?.identifier ?? "USD"
+        }
+        return appCurrencyCode
+    }
+    
+    // Secciones agrupadas por día: primero próximas (asc), luego pasadas (desc)
+    private var groupedSections: [(title: String, items: [Grooming])] {
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: Date())
+        
+        // Dividir en próximas (>= hoy) y pasadas (< hoy)
+        let upcoming = viewModel.groomings.filter { $0.date >= startOfToday }
+        let past = viewModel.groomings.filter { $0.date < startOfToday }
+        
+        // Agrupar por día (startOfDay)
+        func groupByDay(_ items: [Grooming]) -> [Date: [Grooming]] {
+            Dictionary(grouping: items) { g in
+                cal.startOfDay(for: g.date)
+            }
+        }
+        
+        // Títulos de sección
+        func headerTitle(for day: Date) -> String {
+            if cal.isDateInToday(day) { return "Hoy" }
+            if cal.isDateInTomorrow(day) { return "Mañana" }
+            if cal.isDateInYesterday(day) { return "Ayer" }
+            // Ej.: "vie, 10 oct 2025"
+            return day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year())
+        }
+        
+        // Ordenar y mapear a tuplas (title, items)
+        let upcomingSections: [(String, [Grooming])] = groupByDay(upcoming)
+            .sorted(by: { $0.key < $1.key }) // días ascendentes
+            .map { day, items in
+                let sorted = items.sorted { $0.date < $1.date } // dentro del día, por hora asc
+                return (headerTitle(for: day), sorted)
+            }
+        
+        let pastSections: [(String, [Grooming])] = groupByDay(past)
+            .sorted(by: { $0.key > $1.key }) // días descendentes
+            .map { day, items in
+                let sorted = items.sorted { $0.date > $1.date } // dentro del día, por hora desc
+                return (headerTitle(for: day), sorted)
+            }
+        
+        return upcomingSections + pastSections
     }
     
     var body: some View {
@@ -22,32 +69,36 @@ struct PetGroomingTab: View {
                 ContentUnavailableView("Sin citas de grooming",
                                        systemImage: "scissors")
             } else {
-                ForEach(viewModel.groomings, id: \.id) { groom in
-                    NavigationLink {
-                        EventDetailView(event: groom)
-                    } label: {
-                        GroomingRow(groom: groom, currencyCode: currencyCode)
-                    }
-                    // Swipe: completar
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            groom.isCompleted.toggle()
-                            NotificationManager.shared.cancelNotification(id: groom.id)
-                            try? context.save()
-                            viewModel.fetchEvents()
-                        } label: {
-                            Label("Completar", systemImage: "checkmark")
-                        }.tint(.green)
-                    }
-                    // Swipe: borrar
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            NotificationManager.shared.cancelNotification(id: groom.id)
-                            context.delete(groom)
-                            try? context.save()
-                            viewModel.fetchEvents()
-                        } label: {
-                            Label("Borrar", systemImage: "trash")
+                ForEach(Array(groupedSections.enumerated()), id: \.offset) { _, section in
+                    Section(section.title) {
+                        ForEach(section.items, id: \.id) { groom in
+                            NavigationLink {
+                                EventDetailView(event: groom)
+                            } label: {
+                                GroomingRow(groom: groom, currencyCode: currencyCode)
+                            }
+                            // Swipe: completar
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    groom.isCompleted.toggle()
+                                    NotificationManager.shared.cancelNotification(id: groom.id)
+                                    try? context.save()
+                                    viewModel.fetchEvents()
+                                } label: {
+                                    Label("Completar", systemImage: "checkmark")
+                                }.tint(.green)
+                            }
+                            // Swipe: borrar
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    NotificationManager.shared.cancelNotification(id: groom.id)
+                                    context.delete(groom)
+                                    try? context.save()
+                                    viewModel.fetchEvents()
+                                } label: {
+                                    Label("Borrar", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -197,4 +248,3 @@ private enum GroomingPreviewData {
         return pet
     }
 }
-

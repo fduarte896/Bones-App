@@ -807,9 +807,13 @@ private struct GroomingDetailView: View {
     @Bindable var groom: Grooming
     var onDelete: () -> Void
     @Environment(\.modelContext) private var context
+    @AppStorage("appCurrencyCode") private var appCurrencyCode: String = (Locale.current.currency?.identifier ?? "USD")
     
     private var currencyCode: String {
-        Locale.current.currency?.identifier ?? "USD"
+        if appCurrencyCode == "AUTO" {
+            return Locale.current.currency?.identifier ?? "USD"
+        }
+        return appCurrencyCode
     }
     
     var body: some View {

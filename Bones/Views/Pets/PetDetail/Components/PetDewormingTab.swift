@@ -20,9 +20,10 @@ struct PetDewormingTab: View {
     // Estado de expansión por serie (clave: baseName)
     @State private var expandedSeries: Set<String> = []
     
-    // Estado de expansión por subsección dentro de cada serie
+    // Estado de expansión por subsección dentro de cada serie (ahora incluye "overdue")
     private struct SubsectionsState {
         var next: Bool = true
+        var overdue: Bool = true
         var future: Bool = true
         var history: Bool = false
     }
@@ -86,6 +87,52 @@ struct PetDewormingTab: View {
                                 }
                             }
                             
+                            // Vencidas (pendientes < hoy), excluyendo la “Próxima” si ya es vencida
+                            let overduePending = summary.items.filter { dew in
+                                guard !dew.isCompleted, dew.date < now else { return false }
+                                if let next = summary.nextPending {
+                                    return dew.id != next.id
+                                }
+                                return true
+                            }
+                            if !overduePending.isEmpty {
+                                DisclosureGroup(isExpanded: binding.overdue) {
+                                    ForEach(overduePending.sorted(by: { $0.date < $1.date }), id: \.id) { dew in
+                                        NavigationLink {
+                                            EventDetailView(event: dew)
+                                        } label: {
+                                            DewormingDoseRow(
+                                                dew: dew,
+                                                referenceYear: referenceYear,
+                                                allDewormings: summary.items
+                                            )
+                                        }
+                                        .swipeActions(edge: .leading) {
+                                            Button {
+                                                dew.isCompleted.toggle()
+                                                NotificationManager.shared.cancelNotification(id: dew.id)
+                                                try? context.save()
+                                                viewModel.fetchEvents()
+                                            } label: {
+                                                Label("Completar", systemImage: "checkmark")
+                                            }
+                                            .tint(.green)
+                                        }
+                                        .swipeActions(edge: .trailing) {
+                                            Button(role: .destructive) {
+                                                startDelete(for: dew)
+                                            } label: {
+                                                Label("Borrar", systemImage: "trash")
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Text("Vencidas")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
                             // Dosis futuras (pendientes > hoy), excluyendo la "Próxima"
                             let futurePending = summary.items.filter { dew in
                                 guard !dew.isCompleted, dew.date > now else { return false }
@@ -97,7 +144,7 @@ struct PetDewormingTab: View {
                             
                             if !futurePending.isEmpty {
                                 DisclosureGroup(isExpanded: binding.future) {
-                                    ForEach(futurePending, id: \.id) { dew in
+                                    ForEach(futurePending.sorted(by: { $0.date < $1.date }), id: \.id) { dew in
                                         NavigationLink {
                                             EventDetailView(event: dew)
                                         } label: {
@@ -137,7 +184,7 @@ struct PetDewormingTab: View {
                             let history = summary.items.filter { $0.isCompleted }
                             if !history.isEmpty {
                                 DisclosureGroup(isExpanded: binding.history) {
-                                    ForEach(history, id: \.id) { dew in
+                                    ForEach(history.sorted(by: { $0.date > $1.date }), id: \.id) { dew in
                                         NavigationLink {
                                             EventDetailView(event: dew)
                                         } label: {
@@ -249,8 +296,21 @@ struct PetDewormingTab: View {
         let soon = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
         var toExpand: Set<String> = expandedSeries
         for s in viewModel.dewormingSeriesSummaries {
+            var shouldExpand = false
             if let next = s.nextPending?.date {
-                if next < now || next <= soon { toExpand.insert(s.baseName) }
+                if next < now || next <= soon {
+                    shouldExpand = true
+                }
+            }
+            let hasOverdue = s.items.contains { !$0.isCompleted && $0.date < now }
+            if shouldExpand || hasOverdue {
+                toExpand.insert(s.baseName)
+                // Asegura estado por defecto de subsecciones:
+                if expandedSubsections[s.baseName] == nil {
+                    expandedSubsections[s.baseName] = SubsectionsState(next: true, overdue: true, future: true, history: false)
+                } else if hasOverdue {
+                    expandedSubsections[s.baseName]?.overdue = true
+                }
             }
         }
         expandedSeries = toExpand
@@ -259,12 +319,12 @@ struct PetDewormingTab: View {
     // MARK: - Subsections state helpers
     private func ensureSubsectionsState(for summary: PetDetailViewModel.DewormingSeriesSummary) {
         if expandedSubsections[summary.baseName] == nil {
-            // Defaults: próxima y futuras abiertas, historial cerrado
-            expandedSubsections[summary.baseName] = SubsectionsState(next: true, future: true, history: false)
+            // Defaults: próxima, vencidas y futuras abiertas; historial cerrado
+            expandedSubsections[summary.baseName] = SubsectionsState(next: true, overdue: true, future: true, history: false)
         }
     }
     
-    private func bindingForSubsections(_ baseName: String) -> (next: Binding<Bool>, future: Binding<Bool>, history: Binding<Bool>) {
+    private func bindingForSubsections(_ baseName: String) -> (next: Binding<Bool>, overdue: Binding<Bool>, future: Binding<Bool>, history: Binding<Bool>) {
         if expandedSubsections[baseName] == nil {
             expandedSubsections[baseName] = SubsectionsState()
         }
@@ -272,6 +332,10 @@ struct PetDewormingTab: View {
             Binding(
                 get: { expandedSubsections[baseName, default: SubsectionsState()].next },
                 set: { expandedSubsections[baseName, default: SubsectionsState()].next = $0 }
+            ),
+            Binding(
+                get: { expandedSubsections[baseName, default: SubsectionsState()].overdue },
+                set: { expandedSubsections[baseName, default: SubsectionsState()].overdue = $0 }
             ),
             Binding(
                 get: { expandedSubsections[baseName, default: SubsectionsState()].future },
@@ -364,7 +428,17 @@ private struct DewormingDoseRow: View {
 private struct DewormingSeriesRow: View {
     let summary: PetDetailViewModel.DewormingSeriesSummary
     
+    // Nuevo: detectar si hay dosis vencidas pendientes en la serie
+    private var hasOverdue: Bool {
+        let now = Date()
+        return summary.items.contains { !$0.isCompleted && $0.date < now }
+    }
+    
     private var statusText: String {
+        // Prioriza mostrar "Vencida" si hay pendientes en el pasado
+        if hasOverdue {
+            return "Vencida"
+        }
         switch summary.status {
         case .notStarted:
             return "No iniciada"
@@ -414,7 +488,7 @@ private struct DewormingSeriesRow: View {
                     .fontWeight(.semibold)
                 Text(statusText)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(hasOverdue ? .red : .secondary)
                 HStack(spacing: 12) {
                     LabeledValue(label: "Última", value: lastText)
                     LabeledValue(label: "Próxima", value: nextText)

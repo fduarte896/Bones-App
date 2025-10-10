@@ -100,7 +100,8 @@ struct PetWeightTab: View {
                     }
                 }
                 
-                // Botón “Añadir peso” AL FINAL (como pediste)
+                // Botón “Añadir peso” AL FINAL (comentado a petición)
+                /*
                 Section {
                     Button {
                         prepareAddSheet()
@@ -109,6 +110,7 @@ struct PetWeightTab: View {
                         Label("Añadir peso", systemImage: "plus.circle.fill")
                     }
                 }
+                */
             }
         }
         .sheet(isPresented: $showingAdd) { addSheet }
