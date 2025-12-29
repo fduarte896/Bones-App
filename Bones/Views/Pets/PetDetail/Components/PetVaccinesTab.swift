@@ -572,6 +572,34 @@ private extension PetVaccinesTab {
         .modelContainer(container)
 }
 
+#Preview("Solo vencidas") {
+    let container = VaccinesPreviewData.makeContainer()
+    let pet = VaccinesPreviewData.onlyOverdueVaccines(in: container)
+    return PetVaccinesTabPreviewHost(pet: pet)
+        .modelContainer(container)
+}
+
+#Preview("Historial largo") {
+    let container = VaccinesPreviewData.makeContainer()
+    let pet = VaccinesPreviewData.longCompletedHistory(in: container)
+    return PetVaccinesTabPreviewHost(pet: pet)
+        .modelContainer(container)
+}
+
+#Preview("Series mixtas") {
+    let container = VaccinesPreviewData.makeContainer()
+    let pet = VaccinesPreviewData.mixedSeriesStates(in: container)
+    return PetVaccinesTabPreviewHost(pet: pet)
+        .modelContainer(container)
+}
+
+#Preview("Refuerzos y nombres raros") {
+    let container = VaccinesPreviewData.makeContainer()
+    let pet = VaccinesPreviewData.weirdNamesAndBoosters(in: container)
+    return PetVaccinesTabPreviewHost(pet: pet)
+        .modelContainer(container)
+}
+
 // Host que crea el VM y le inyecta el context del entorno
 private struct PetVaccinesTabPreviewHost: View {
     let pet: Pet
@@ -665,4 +693,113 @@ private enum VaccinesPreviewData {
         try? ctx.save()
         return pet
     }
+    
+    // Mascota solo con vacunas vencidas pendientes
+    @discardableResult
+    static func onlyOverdueVaccines(in container: ModelContainer) -> Pet {
+        let ctx = ModelContext(container)
+        let pet = Pet(name: "Rocky", species: .perro, breed: "Boxer", sex: .male)
+        ctx.insert(pet)
+        let now = Date()
+        let v1 = Vaccine(date: now.addingTimeInterval(-7 * 24 * 3600),
+                         pet: pet,
+                         vaccineName: "Moquillo (dosis 1/2)",
+                         manufacturer: "LabX",
+                         notes: "No aplicada")
+        let v2 = Vaccine(date: now.addingTimeInterval(-20 * 24 * 3600),
+                         pet: pet,
+                         vaccineName: "Moquillo (dosis 2/2)",
+                         manufacturer: nil,
+                         notes: "Pendiente")
+        ctx.insert(v1)
+        ctx.insert(v2)
+        try? ctx.save()
+        return pet
+    }
+
+    // Mascota con historial largo de vacunas completadas (diferentes años)
+    @discardableResult
+    static func longCompletedHistory(in container: ModelContainer) -> Pet {
+        let ctx = ModelContext(container)
+        let pet = Pet(name: "Daisy", species: .gato, breed: "Persa", sex: .female)
+        ctx.insert(pet)
+        let now = Date()
+        for i in 0..<10 {
+            let v = Vaccine(date: Calendar.current.date(byAdding: .year, value: -i, to: now)!,
+                            pet: pet,
+                            vaccineName: "Triple Felina (dosis \(i+1)/10)",
+                            manufacturer: i%2 == 0 ? "FeliVet" : "CatLabs",
+                            notes: "Registro anual año \(Calendar.current.component(.year, from: Calendar.current.date(byAdding: .year, value: -i, to: now)!))")
+            v.isCompleted = true
+            ctx.insert(v)
+        }
+        try? ctx.save()
+        return pet
+    }
+
+    // Mascota con varias series activas y estados
+    @discardableResult
+    static func mixedSeriesStates(in container: ModelContainer) -> Pet {
+        let ctx = ModelContext(container)
+        let pet = Pet(name: "Max", species: .perro, breed: "Labrador", sex: .male)
+        ctx.insert(pet)
+        let now = Date()
+        // Serie 1: En progreso
+        let v1 = Vaccine(date: now.addingTimeInterval(-10 * 24 * 3600), pet: pet, vaccineName: "Parvo (dosis 1/3)", manufacturer: "CanVet", notes: nil)
+        v1.isCompleted = true
+        let v2 = Vaccine(date: now.addingTimeInterval(7 * 24 * 3600), pet: pet, vaccineName: "Parvo (dosis 2/3)", manufacturer: "CanVet", notes: nil)
+        // Serie 2: No iniciada
+        let v3 = Vaccine(date: now.addingTimeInterval(25 * 24 * 3600), pet: pet, vaccineName: "Leptospirosis (dosis 1/2)", manufacturer: "BioVet", notes: nil)
+        // Serie 3: Solo booster
+        let v4 = Vaccine(date: now.addingTimeInterval(100 * 24 * 3600), pet: pet, vaccineName: "Rabia (refuerzo)", manufacturer: "Rabix", notes: "Booster anual")
+        ctx.insert(v1)
+        ctx.insert(v2)
+        ctx.insert(v3)
+        ctx.insert(v4)
+        try? ctx.save()
+        return pet
+    }
+
+    // Mascota con dosis de refuerzo atípicas y nombres raros
+    @discardableResult
+    static func weirdNamesAndBoosters(in container: ModelContainer) -> Pet {
+        let ctx = ModelContext(container)
+        let pet = Pet(name: "Nina", species: .gato, breed: "Mestizo", sex: .female)
+        ctx.insert(pet)
+        let now = Date()
+        let v1 = Vaccine(date: now.addingTimeInterval(-2 * 24 * 3600), pet: pet, vaccineName: "Refuerzo Parvovirus", manufacturer: "XLab", notes: nil)
+        let v2 = Vaccine(date: now.addingTimeInterval(15 * 24 * 3600), pet: pet, vaccineName: "Moquillo!", manufacturer: nil, notes: "Formato raro")
+        let v3 = Vaccine(date: now.addingTimeInterval(50 * 24 * 3600), pet: pet, vaccineName: "Parvo Booster", manufacturer: "ZLabs", notes: "Solo booster")
+        ctx.insert(v1)
+        ctx.insert(v2)
+        ctx.insert(v3)
+        try? ctx.save()
+        return pet
+    }
 }
+// Seeder para datos demo
+struct DemoSeeder {
+    /// Inserta la mascota ficticia "DemoDog" con un puñado de medicamentos variados (vencidos, actuales, futuros)
+    static func seedDemoDogWithMedications(in container: ModelContainer) -> Pet {
+        let ctx = ModelContext(container)
+        let demo = Pet(name: "DemoDog", species: .perro, breed: "Demo Breed", sex: .male)
+        ctx.insert(demo)
+        let now = Date()
+        let cal = Calendar.current
+        // Vencidos
+        let m1 = Medication(date: cal.date(byAdding: .day, value: -5, to: now)!, pet: demo, name: "Amoxicilina (dosis 1/3)", dosage: "250 mg", frequency: "cada 8 h")
+        let m2 = Medication(date: cal.date(byAdding: .day, value: -2, to: now)!, pet: demo, name: "Amoxicilina (dosis 2/3)", dosage: "250 mg", frequency: "cada 8 h")
+        // Actual (hoy)
+        let m3 = Medication(date: now, pet: demo, name: "Amoxicilina (dosis 3/3)", dosage: "250 mg", frequency: "cada 8 h")
+        // Futuros próximos
+        let m4 = Medication(date: cal.date(byAdding: .day, value: 2, to: now)!, pet: demo, name: "Prednisona", dosage: "5 mg", frequency: "cada 24 h")
+        let m5 = Medication(date: cal.date(byAdding: .day, value: 4, to: now)!, pet: demo, name: "Omeprazol", dosage: "10 mg", frequency: "cada día")
+        // Otra serie futura
+        let m6 = Medication(date: cal.date(byAdding: .day, value: 6, to: now)!, pet: demo, name: "Cefalexina (dosis 1/2)", dosage: "500 mg", frequency: "cada 12 h")
+        let m7 = Medication(date: cal.date(byAdding: .day, value: 8, to: now)!, pet: demo, name: "Cefalexina (dosis 2/2)", dosage: "500 mg", frequency: "cada 12 h")
+        ctx.insert(m1); ctx.insert(m2); ctx.insert(m3); ctx.insert(m4); ctx.insert(m5); ctx.insert(m6); ctx.insert(m7)
+        try? ctx.save()
+        return demo
+    }
+}
+
