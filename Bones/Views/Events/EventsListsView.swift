@@ -373,11 +373,23 @@ private struct EventRow: View {
         }
     }
     
+    private var tint: Color {
+        switch event {
+        case is Medication:  return .blue
+        case is Vaccine:     return .green
+        case is Deworming:   return .orange
+        case is Grooming:    return .teal
+        case is WeightEntry: return .gray
+        default:             return .secondary
+        }
+    }
+    
     var body: some View {
         let parsed = splitDose(from: event.displayName)
         let now = Date()
         let cal = Calendar.current
-        let isOverdueToday = !event.isCompleted && cal.isDateInToday(event.date) && event.date < now
+        let isOverdue = !event.isCompleted && event.date < now
+        let isTodayOrTomorrow = cal.isDateInToday(event.date) || cal.isDateInTomorrow(event.date)
         
         HStack(spacing: 12) {
             // ---------- Miniatura ----------
@@ -401,39 +413,55 @@ private struct EventRow: View {
             
             // ---------- Texto ----------
             VStack(alignment: .leading, spacing: 2) {
+                Text(parsed.base)
+                    .fontWeight(.semibold)
+                
                 HStack(spacing: 6) {
-                    Text(parsed.base)
-                        .fontWeight(.semibold)
-                    if isOverdueToday {
-                        Text("Vencido")
-                            .font(.caption2)
-                            .padding(.vertical, 2)
-                            .padding(.horizontal, 6)
-                            .background(Capsule().fill(Color.red.opacity(0.15)))
-                            .foregroundStyle(.red)
+                    if !event.displayType.isEmpty {
+                        TagChip(text: shortTypeLabel, tint: tint)
+                    }
+                    if let doseLabel = parsed.dose {
+                        TagChip(text: doseLabel, tint: .secondary)
+                    }
+                    if !isTodayOrTomorrow {
+                        TagChip(text: event.date.formatted(.dateTime.day().month().year().hour().minute()), tint: .secondary)
+                    }
+                    if isOverdue {
+                        TagChip(text: "Vencida", tint: .red)
                     }
                 }
-                
-                if let doseLabel = parsed.dose {
-                    Text(doseLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Text("🐾 \(event.pet?.name ?? "Sin mascota")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                
-                Text(event.date, format: .dateTime.day().month().year().hour().minute())
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
             
             Spacer()
-            
-            Image(systemName: icon)
-                .foregroundStyle(event.isCompleted ? .green : .accentColor)
+            if isTodayOrTomorrow {
+                Text(event.date, format: .dateTime.hour().minute())
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            }
         }
+    }
+    
+    private var shortTypeLabel: String {
+        if event.displayType == "Desparasitación" { return "Despar." }
+        return event.displayType
+    }
+}
+
+private struct TagChip: View {
+    let text: String
+    let tint: Color
+    
+    var body: some View {
+        Text(text)
+            .font(.caption2)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 6)
+            .background(Capsule().fill(tint.opacity(0.12)))
+            .foregroundStyle(tint)
     }
 }
 

@@ -17,6 +17,11 @@ struct PetVaccinesTab: View {
     @State private var showingDeleteDialog = false
     @State private var pendingDelete: Vaccine?
     
+    // Confirmación de borrado de serie completa
+    @State private var pendingSeriesItems: [Vaccine] = []
+    @State private var pendingSeriesCount: Int = 0
+    @State private var showingSeriesDeleteDialog = false
+    
     // Estado de expansión por serie (clave: baseName)
     @State private var expandedSeries: Set<String> = []
     
@@ -221,19 +226,32 @@ struct PetVaccinesTab: View {
                         }
                     } header: {
                         // Header “tappable” que actúa como el label del DisclosureGroup de la serie
-                        Button {
-                            if expandedSeries.contains(summary.baseName) {
-                                expandedSeries.remove(summary.baseName)
-                            } else {
-                                expandedSeries.insert(summary.baseName)
-                                // Inicializa estado de subsecciones si no existe
-                                ensureSubsectionsState(for: summary)
+                        HStack(spacing: 12) {
+                            Button {
+                                if expandedSeries.contains(summary.baseName) {
+                                    expandedSeries.remove(summary.baseName)
+                                } else {
+                                    expandedSeries.insert(summary.baseName)
+                                    // Inicializa estado de subsecciones si no existe
+                                    ensureSubsectionsState(for: summary)
+                                }
+                            } label: {
+                                SeriesRow(summary: summary)
+                                    .contentShape(Rectangle())
                             }
-                        } label: {
-                            SeriesRow(summary: summary)
-                                .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            
+                            Spacer(minLength: 0)
+                            
+                            Button {
+                                startDeleteSeries(summary)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Eliminar serie")
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -270,6 +288,18 @@ struct PetVaccinesTab: View {
             } else {
                 Text("Esta acción no se puede deshacer.")
             }
+        }
+        .confirmationDialog(
+            "¿Eliminar toda la serie?",
+            isPresented: $showingSeriesDeleteDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Eliminar \(pendingSeriesCount) dosis", role: .destructive) {
+                deleteSeries()
+            }
+            Button("Cancelar", role: .cancel) { clearSeriesPending() }
+        } message: {
+            Text("Se eliminarán todas las dosis de esta serie. Esta acción no se puede deshacer.")
         }
     }
     
@@ -373,7 +403,6 @@ private struct VaccineRow: View {
         let baseDoseLabel: String? = {
             if isBooster { return "Dosis de refuerzo" }
             if let cur = numbers.current {
-                if cur <= 1 { return "Primera dosis" }
                 if let tot = numbers.total { return "Dosis \(cur)/\(tot)" }
                 return "Dosis \(cur)"
             }
@@ -436,6 +465,19 @@ private struct SeriesRow: View {
         return summary.items.contains { !$0.isCompleted && $0.date < now }
     }
     
+    private var pendingCount: Int {
+        summary.items.filter { !$0.isCompleted }.count
+    }
+    
+    private var overdueCount: Int {
+        let now = Date()
+        return summary.items.filter { !$0.isCompleted && $0.date < now }.count
+    }
+    
+    private var completedCount: Int {
+        summary.items.filter { $0.isCompleted }.count
+    }
+    
     private var statusText: String {
         // Prioriza mostrar "Vencida" si hay pendientes en el pasado
         if hasOverdue {
@@ -489,12 +531,21 @@ private struct SeriesRow: View {
                 Text(statusText)
                     .font(.caption)
                     .foregroundStyle(hasOverdue ? .red : .secondary)
-                HStack(spacing: 12) {
-                    LabeledValue(label: "Última", value: lastText)
-                    LabeledValue(label: "Próxima", value: nextText)
+                HStack(spacing: 6) {
+                    if pendingCount > 0 {
+                        SummaryChip(label: "Pendientes", value: "\(pendingCount)", tint: .blue)
+                    }
+                    if overdueCount > 0 {
+                        SummaryChip(label: "Vencidas", value: "\(overdueCount)", tint: .red)
+                    }
+                    if completedCount > 0 {
+                        SummaryChip(label: "Completadas", value: "\(completedCount)", tint: .green)
+                    }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    SummaryChip(label: "Última", value: lastText, tint: .secondary)
+                    SummaryChip(label: "Próxima", value: nextText, tint: hasOverdue ? .red : .secondary)
+                }
             }
             Spacer()
             Image(systemName: "syringe")
@@ -502,15 +553,22 @@ private struct SeriesRow: View {
     }
 }
 
-private struct LabeledValue: View {
+private struct SummaryChip: View {
     let label: String
     let value: String
+    let tint: Color
+    
     var body: some View {
         HStack(spacing: 4) {
-            Text(label + ":")
+            Text(label)
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.semibold)
         }
+        .font(.caption2)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(Capsule().fill(tint.opacity(0.12)))
+        .foregroundStyle(tint)
     }
 }
 
@@ -553,6 +611,30 @@ private extension PetVaccinesTab {
         pendingFutureCount = 0
         pendingDelete = nil
         showingDeleteDialog = false
+    }
+    
+    // MARK: - Borrado de serie completa
+    func startDeleteSeries(_ summary: PetDetailViewModel.VaccineSeriesSummary) {
+        pendingSeriesItems = summary.items
+        pendingSeriesCount = summary.items.count
+        showingSeriesDeleteDialog = true
+    }
+    
+    func deleteSeries() {
+        for vac in pendingSeriesItems {
+            NotificationManager.shared.cancelNotification(id: vac.id)
+            context.delete(vac)
+        }
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearSeriesPending()
+    }
+    
+    func clearSeriesPending() {
+        pendingSeriesItems = []
+        pendingSeriesCount = 0
+        showingSeriesDeleteDialog = false
     }
 }
 

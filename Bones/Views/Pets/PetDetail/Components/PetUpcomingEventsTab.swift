@@ -23,7 +23,8 @@ struct PetUpcomingEventsTab: View {
         List {
             if viewModel.groupedUpcomingEvents.isEmpty {
                 ContentUnavailableView("Sin próximos eventos",
-                                       systemImage: "checkmark.circle")
+                                       systemImage: "checkmark.circle",
+                                       description: Text("Cuando programes eventos aparecerán aquí."))
             } else {
                 ForEach(viewModel.groupedUpcomingEvents) { section in
                     Section(section.title){
@@ -130,34 +131,98 @@ private struct EventRow: View {
         }
     }
     
+    private var icon: String {
+        switch event {
+        case is Medication:  "pills.fill"
+        case is Vaccine:     "syringe"
+        case is Deworming:   "ladybug.fill"
+        case is Grooming:    "scissors"
+        case is WeightEntry: "scalemass"
+        default:             "bell"
+        }
+    }
+    
+    private var tint: Color {
+        switch event {
+        case is Medication:  return .blue
+        case is Vaccine:     return .green
+        case is Deworming:   return .orange
+        case is Grooming:    return .teal
+        case is WeightEntry: return .gray
+        default:             return .secondary
+        }
+    }
+    
     var body: some View {
         let parsed = splitDose(from: event.displayName)
     
-        HStack {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Color(.systemGray6)))
+            
             VStack(alignment: .leading, spacing: 2) {
                 // Título sin sufijo de dosis
                 Text(parsed.base).fontWeight(.semibold)
                 
-                // Línea dedicada al número de la dosis (si aplica)
-                if let doseLabel = parsed.dose {
-                    Text(doseLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    if !event.displayType.isEmpty {
+                        TagChip(text: shortTypeLabel, tint: tint)
+                    }
+                    if let doseLabel = parsed.dose {
+                        TagChip(text: doseLabel, tint: .secondary)
+                    }
+                    if !isTodayOrTomorrow {
+                        TagChip(text: event.date.formatted(.dateTime.day().month().hour().minute()), tint: .secondary)
+                    }
+                    if isOverdue {
+                        TagChip(text: "Vencida", tint: .red)
+                    }
                 }
-                
-                if !event.displayType.isEmpty {
-                    Text(event.displayType)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Text(event.date, format: .dateTime.day().month().hour().minute())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Spacer()
-            Image(systemName: "bell")
+            
+            if isTodayOrTomorrow {
+                Text(event.date, format: .dateTime.hour().minute())
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            }
         }
+    }
+    
+    private var isOverdue: Bool {
+        !event.isCompleted && event.date < Date()
+    }
+    
+    private var isTodayOrTomorrow: Bool {
+        let cal = Calendar.current
+        return cal.isDateInToday(event.date) || cal.isDateInTomorrow(event.date)
+    }
+    
+    private var shortTypeLabel: String {
+        if event.displayType == "Desparasitación" { return "Despar." }
+        return event.displayType
+    }
+    
+}
+
+private struct TagChip: View {
+    let text: String
+    let tint: Color
+    
+    var body: some View {
+        Text(text)
+            .font(.caption2)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 6)
+            .background(Capsule().fill(tint.opacity(0.12)))
+            .foregroundStyle(tint)
     }
 }
 
@@ -247,5 +312,107 @@ private extension PetUpcomingEventsTab {
         pendingVac = nil
         pendingDew = nil
         showingDeleteDialog = false
+    }
+}
+// MARK: - Preview
+
+#Preview("Próximos – Variado") {
+    let container = PreviewData.makeContainer()
+    PreviewData.seed(in: container)
+    return PetUpcomingEventsPreviewHost()
+        .modelContainer(container)
+}
+
+private struct PetUpcomingEventsPreviewHost: View {
+    @Environment(\.modelContext) private var context
+    @StateObject private var vm: PetDetailViewModel
+    
+    init() {
+        let sampleID = PreviewData.samplePetID
+        _vm = StateObject(wrappedValue: PetDetailViewModel(petID: sampleID))
+    }
+    
+    var body: some View {
+        PetUpcomingEventsTab(viewModel: vm)
+            .onAppear { vm.inject(context: context) }
+    }
+}
+
+private enum PreviewData {
+    static let samplePetID = UUID()
+    
+    static func makeContainer() -> ModelContainer {
+        let schema = Schema([
+            Pet.self,
+            Medication.self,
+            Vaccine.self,
+            Deworming.self,
+            Grooming.self,
+            WeightEntry.self
+        ] as [any PersistentModel.Type])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try! ModelContainer(for: schema, configurations: config)
+    }
+    
+    static func seed(in container: ModelContainer) {
+        let ctx = ModelContext(container)
+        let cal = Calendar.current
+        let now = Date()
+        
+        // Mascota
+        let pet = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
+        pet.id = samplePetID
+        ctx.insert(pet)
+        
+        // Medicamentos (hoy, mañana, semana próxima)
+        ctx.insert(Medication(date: now.addingTimeInterval(2 * 3600),
+                              pet: pet,
+                              name: "Amoxicilina (dosis 1/3)",
+                              dosage: "250 mg",
+                              frequency: "cada 8 h"))
+        ctx.insert(Medication(date: cal.date(byAdding: .day, value: 1, to: now)!,
+                              pet: pet,
+                              name: "Amoxicilina (dosis 2/3)",
+                              dosage: "250 mg",
+                              frequency: "cada 8 h"))
+        ctx.insert(Medication(date: cal.date(byAdding: .day, value: 5, to: now)!,
+                              pet: pet,
+                              name: "Omeprazol",
+                              dosage: "10 mg",
+                              frequency: "cada día"))
+        
+        // Vacunas (futuras)
+        ctx.insert(Vaccine(date: cal.date(byAdding: .day, value: 3, to: now)!,
+                           pet: pet,
+                           vaccineName: "Rabia (dosis 2/3)",
+                           manufacturer: "VetLabs"))
+        ctx.insert(Vaccine(date: cal.date(byAdding: .day, value: 20, to: now)!,
+                           pet: pet,
+                           vaccineName: "Moquillo",
+                           manufacturer: "VetLabs"))
+        
+        // Desparasitación (futura cercana)
+        ctx.insert(Deworming(date: cal.date(byAdding: .day, value: 7, to: now)!,
+                             pet: pet,
+                             notes: "Drontal Plus (dosis 1/2)",
+                             prescriptionImageData: nil,
+                             seriesID: UUID()))
+        
+        // Grooming (esta semana)
+        let groom = Grooming(date: cal.date(byAdding: .day, value: 4, to: now)!,
+                             pet: pet,
+                             location: "PetSpa",
+                             notes: "Corte y baño",
+                             services: [.bano, .cortePelo],
+                             totalPrice: 45)
+        ctx.insert(groom)
+        
+        // Peso (mañana)
+        ctx.insert(WeightEntry(date: cal.date(byAdding: .day, value: 1, to: now)!,
+                               pet: pet,
+                               weightKg: 18.4,
+                               notes: "Control mensual"))
+        
+        try? ctx.save()
     }
 }

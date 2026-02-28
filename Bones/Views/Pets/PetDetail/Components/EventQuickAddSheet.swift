@@ -680,8 +680,24 @@ extension EventQuickAddSheet {
         let dewormSeriesID: UUID? = (kind == .medication && isDeworming) ? UUID() : nil
         let rrule: String? = (kind == .medication && isDeworming && rruleEnabled) ? makeRRULE(value: rruleIntervalValue, unit: rruleIntervalUnit) : nil
         
-        // Inserta el evento principal
-        let primary = insertEvent(on: eventDate, doseLabel: nil, dewormSeriesID: dewormSeriesID, rrule: rrule)
+        // Inserta el evento principal (si hay programación, etiqueta como dosis 1/N)
+        let primaryDoseLabel: String? = {
+            guard kind == .medication, scheduleEnabled else { return nil }
+            if scheduleMode == .interval {
+                let preview = medicationPreview(start: eventDate,
+                                                mode: scheduleMode,
+                                                intervalValue: intervalValue,
+                                                intervalUnit: intervalUnit,
+                                                durationDays: durationDays,
+                                                timesPerDay: timesPerDay)
+                let total = preview?.count ?? 1
+                return total > 1 ? "dosis 1/\(total)" : nil
+            } else {
+                let total = max(1, timesPerDay * durationDays)
+                return total > 1 ? "dosis 1/\(total)" : nil
+            }
+        }()
+        let primary = insertEvent(on: eventDate, doseLabel: primaryDoseLabel, dewormSeriesID: dewormSeriesID, rrule: rrule)
         
         // Programaciones futuras “manuales” (medicamentos/vacunas)
         if scheduleEnabled { scheduleFuture(from: primary, dewormSeriesID: dewormSeriesID, rrule: rrule) }
@@ -704,12 +720,8 @@ extension EventQuickAddSheet {
         switch kind {
         case .medication:
             if isDeworming {
-                // Notas = título [+ dosis informativa] [+ " (dosis X/Y)"]
-                var base = title
-                let trimmedDose = dosage.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedDose.isEmpty {
-                    base += " – \(trimmedDose)"
-                }
+                // Notas = título [+ " (dosis X/Y)"]
+                let base = title
                 let notes = doseLabel.map { "\(base) (\($0))" } ?? base
                 let d = Deworming(date: date, pet: pet, notes: notes, prescriptionImageData: nil, seriesID: dewormSeriesID)
                 d.rrule = rrule

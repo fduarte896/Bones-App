@@ -531,6 +531,19 @@ private struct MedicationSeriesRow: View {
         return summary.items.contains { !$0.isCompleted && $0.date < now }
     }
     
+    private var pendingCount: Int {
+        summary.items.filter { !$0.isCompleted }.count
+    }
+    
+    private var overdueCount: Int {
+        let now = Date()
+        return summary.items.filter { !$0.isCompleted && $0.date < now }.count
+    }
+    
+    private var completedCount: Int {
+        summary.items.filter { $0.isCompleted }.count
+    }
+    
     private var statusText: String {
         // Prioriza mostrar "Vencida" si hay pendientes en el pasado
         if hasOverdue {
@@ -578,12 +591,21 @@ private struct MedicationSeriesRow: View {
                 Text(statusText)
                     .font(.caption)
                     .foregroundStyle(hasOverdue ? .red : .secondary)
-                HStack(spacing: 12) {
-                    LabeledValue(label: "Última", value: lastText)
-                    LabeledValue(label: "Próxima", value: nextText)
+                HStack(spacing: 6) {
+                    if pendingCount > 0 {
+                        SummaryChip(label: "Pendientes", value: "\(pendingCount)", tint: .blue)
+                    }
+                    if overdueCount > 0 {
+                        SummaryChip(label: "Vencidas", value: "\(overdueCount)", tint: .red)
+                    }
+                    if completedCount > 0 {
+                        SummaryChip(label: "Completadas", value: "\(completedCount)", tint: .green)
+                    }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    SummaryChip(label: "Última", value: lastText, tint: .secondary)
+                    SummaryChip(label: "Próxima", value: nextText, tint: hasOverdue ? .red : .secondary)
+                }
             }
             Spacer()
             Image(systemName: "pills.fill")
@@ -600,6 +622,25 @@ private struct LabeledValue: View {
             Text(value)
                 .fontWeight(.medium)
         }
+    }
+}
+
+private struct SummaryChip: View {
+    let label: String
+    let value: String
+    let tint: Color
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label)
+            Text(value)
+                .fontWeight(.semibold)
+        }
+        .font(.caption2)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(Capsule().fill(tint.opacity(0.12)))
+        .foregroundStyle(tint)
     }
 }
 
