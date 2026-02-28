@@ -420,9 +420,6 @@ private struct MedicationRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: med.isCompleted ? "checkmark.circle.fill"
-                                              : "pills.circle")
-                .foregroundStyle(med.isCompleted ? .green : .accentColor)
         }
     }
     
@@ -608,7 +605,6 @@ private struct MedicationSeriesRow: View {
                 }
             }
             Spacer()
-            Image(systemName: "pills.fill")
         }
     }
 }

@@ -448,9 +448,6 @@ private struct VaccineRow: View {
                 .foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: vac.isCompleted ? "checkmark.circle.fill"
-                                              : "syringe")
-                .foregroundStyle(vac.isCompleted ? .green : .accentColor)
         }
     }
 }
@@ -465,42 +462,13 @@ private struct SeriesRow: View {
         return summary.items.contains { !$0.isCompleted && $0.date < now }
     }
     
-    private var pendingCount: Int {
-        summary.items.filter { !$0.isCompleted }.count
-    }
     
-    private var overdueCount: Int {
-        let now = Date()
-        return summary.items.filter { !$0.isCompleted && $0.date < now }.count
-    }
-    
-    private var completedCount: Int {
-        summary.items.filter { $0.isCompleted }.count
-    }
-    
-    private var statusText: String {
-        // Prioriza mostrar "Vencida" si hay pendientes en el pasado
-        if hasOverdue {
-            return "Vencida"
-        }
-        switch summary.status {
-        case .notStarted:
-            return "No iniciada"
-        case .completed:
-            return "Completada"
-        case .inProgress(let current, let total):
-            if let total {
-                return "En progreso (\(current)/\(total))"
-            } else {
-                return "En progreso"
-            }
-        case .booster(let next):
-            if let d = next {
-                return "Refuerzo • \(d.formatted(date: .abbreviated, time: .omitted))"
-            } else {
-                return "Refuerzo"
-            }
-        }
+    private var boosterChipLabel: String? {
+        let boosters = summary.items.filter { DoseSeries.isBooster($0, among: summary.items) }
+        guard !boosters.isEmpty else { return nil }
+        let completedBoosters = boosters.filter { $0.isCompleted }.count
+        let current = min(completedBoosters + 1, boosters.count)
+        return "Refuerzo \(current)/\(boosters.count)"
     }
     
     private var nextText: String {
@@ -528,27 +496,15 @@ private struct SeriesRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(summary.baseName)
                     .fontWeight(.semibold)
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(hasOverdue ? .red : .secondary)
-                HStack(spacing: 6) {
-                    if pendingCount > 0 {
-                        SummaryChip(label: "Pendientes", value: "\(pendingCount)", tint: .blue)
-                    }
-                    if overdueCount > 0 {
-                        SummaryChip(label: "Vencidas", value: "\(overdueCount)", tint: .red)
-                    }
-                    if completedCount > 0 {
-                        SummaryChip(label: "Completadas", value: "\(completedCount)", tint: .green)
-                    }
-                }
                 HStack(spacing: 6) {
                     SummaryChip(label: "Última", value: lastText, tint: .secondary)
                     SummaryChip(label: "Próxima", value: nextText, tint: hasOverdue ? .red : .secondary)
+                    if let boosterChipLabel {
+                        SummaryChip(label: boosterChipLabel, value: "", tint: .secondary)
+                    }
                 }
             }
             Spacer()
-            Image(systemName: "syringe")
         }
     }
 }

@@ -437,9 +437,6 @@ private struct DewormingDoseRow: View {
                 .foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: dew.isCompleted ? "checkmark.circle.fill"
-                                              : "ladybug.fill")
-                .foregroundStyle(dew.isCompleted ? .green : .accentColor)
         }
     }
     
@@ -548,7 +545,6 @@ private struct DewormingSeriesRow: View {
                 }
             }
             Spacer()
-            Image(systemName: "ladybug.fill")
         }
     }
 }
