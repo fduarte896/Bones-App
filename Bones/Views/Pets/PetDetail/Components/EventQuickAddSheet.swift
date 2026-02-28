@@ -200,8 +200,8 @@ struct EventQuickAddSheet: View {
                 
                 // ---------- RRULE para desparasitación ----------
                 if kind == .medication && isDeworming {
-                    Section("Recurrencias") {
-                        Toggle("Crear recurrencias", isOn: $rruleEnabled)
+                    Section("Recordatorio futuro") {
+                        Toggle("Crear recordatorio para la próxima recurrencia", isOn: $rruleEnabled)
                         if rruleEnabled {
                             HStack {
                                 Text("Cada")
@@ -219,7 +219,7 @@ struct EventQuickAddSheet: View {
                                 .pickerStyle(.menu)
                             }
 
-                            Text("Nota: Las recurrencias crearán este mismo evento de acuerdo a tu frecuencia seleccionada.")
+                            Text("Nota: Se creará un único recordatorio futuro. Cuando llegue, podrás ajustar y programar la nueva serie.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -411,7 +411,7 @@ private extension EventQuickAddSheet {
         VStack(alignment: .leading, spacing: 8) {
             ModeChips
             if scheduleMode == .interval {
-                IntervalRow(value: $intervalValue, unit: $intervalUnit)
+                IntervalRow(value: $intervalValue, unit: $intervalUnit, allowedUnits: [.hours])
                 Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...90)
                 
                 // Resumen en vivo
@@ -554,6 +554,7 @@ private extension EventQuickAddSheet {
     struct IntervalRow: View {
         @Binding var value: Int
         @Binding var unit: IntervalUnit
+        var allowedUnits: [IntervalUnit] = IntervalUnit.allCases
         var body: some View {
             HStack(spacing: 12) {
                 Text("Cada")
@@ -563,18 +564,25 @@ private extension EventQuickAddSheet {
                     .font(.body.monospacedDigit())
                 
                 // Unidad pegada al número
-                Picker(selection: $unit) {
-                    ForEach(IntervalUnit.allCases) { option in
-                        Text(option.label).tag(option)
-                    }
-                } label: {
-                    Text(unit.label)
+                if allowedUnits.count == 1, let only = allowedUnits.first {
+                    Text(only.label)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Picker(selection: $unit) {
+                        ForEach(allowedUnits) { option in
+                            Text(option.label).tag(option)
+                        }
+                    } label: {
+                        Text(unit.label)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(minWidth: 80)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(minWidth: 80)
                 
                 Spacer()
                 
@@ -1103,7 +1111,7 @@ private extension EventQuickAddSheet {
         return makeRRULE(value: rruleIntervalValue, unit: rruleIntervalUnit)
     }
     
-    // MARK: - Expansión de RRULE (Desparasitación)
+    // MARK: - RRULE simple (Desparasitación)
     func expandDewormingRecurrence(anchor: Date, seriesID: UUID, rrule: String) {
         // Parse básico de "FREQ=...;INTERVAL=N"
         let parts = rrule
@@ -1125,25 +1133,11 @@ private extension EventQuickAddSheet {
         default:        unit = .months
         }
         
-        // Horizonte: 24 meses a partir de la fecha ancla
-        let horizon = Calendar.current.date(byAdding: .month, value: 24, to: anchor) ?? anchor
-        
-        // Genera fechas (omitimos la ancla; ya está insertada)
-        var dates: [Date] = []
-        var current = anchor
-        while true {
-            let next = addInterval(interval, unit: unit, to: current)
-            if next > horizon { break }
-            dates.append(next)
-            current = next
-        }
-        
-        // Evitar duplicados: no insertes si ya hay una Deworming con mismo seriesID y fecha
-        for d in dates {
-            if !existsDeworming(seriesID: seriesID, date: d, petID: pet.id) {
-                // Reusa insertEvent para notificaciones y campos
-                _ = insertEvent(on: d, doseLabel: nil, dewormSeriesID: seriesID, rrule: rrule)
-            }
+        // Solo crea el siguiente recordatorio (sin expandir a múltiples ocurrencias)
+        let next = addInterval(interval, unit: unit, to: anchor)
+        if !existsDeworming(seriesID: seriesID, date: next, petID: pet.id) {
+            // Reusa insertEvent para notificaciones y campos
+            _ = insertEvent(on: next, doseLabel: nil, dewormSeriesID: seriesID, rrule: rrule)
         }
     }
     

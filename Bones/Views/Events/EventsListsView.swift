@@ -38,8 +38,13 @@ struct EventsListView: View {
         NavigationStack {
             List {
                 if vm.sections.isEmpty {
-                    ContentUnavailableView("Sin eventos próximos",
-                                           systemImage: "calendar")
+                    if vm.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ContentUnavailableView("Sin eventos próximos",
+                                               systemImage: "calendar")
+                    } else {
+                        ContentUnavailableView("Sin resultados",
+                                               systemImage: "magnifyingglass")
+                    }
                 } else {
                     // Añadimos un id explícito para evitar inferencias costosas
                     ForEach(vm.sections, id: \.title) { section in
@@ -86,6 +91,9 @@ struct EventsListView: View {
                 }
             }
             .refreshable { vm.fetchAllEvents() }  // pull-to-refresh
+            .searchable(text: $vm.searchQuery, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Buscar eventos")
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .eventsDidChange)) { _ in
             vm.fetchAllEvents()

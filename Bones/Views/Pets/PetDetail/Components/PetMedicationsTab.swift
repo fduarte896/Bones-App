@@ -17,6 +17,11 @@ struct PetMedicationsTab: View {
     @State private var showingDeleteDialog = false
     @State private var pendingDelete: Medication?
     
+    // Confirmación de borrado de serie completa
+    @State private var pendingSeriesBase: String?
+    @State private var pendingSeriesCount: Int = 0
+    @State private var showingSeriesDeleteDialog = false
+    
     // Estado de expansión por serie (clave: baseName)
     @State private var expandedSeries: Set<String> = []
     
@@ -205,19 +210,32 @@ struct PetMedicationsTab: View {
                         }
                     } header: {
                         // Header “tappable” que actúa como el label del DisclosureGroup de la serie
-                        Button {
-                            if expandedSeries.contains(summary.baseName) {
-                                expandedSeries.remove(summary.baseName)
-                            } else {
-                                expandedSeries.insert(summary.baseName)
-                                // Inicializa estado de subsecciones si no existe
-                                ensureSubsectionsState(for: summary)
+                        HStack(spacing: 12) {
+                            Button {
+                                if expandedSeries.contains(summary.baseName) {
+                                    expandedSeries.remove(summary.baseName)
+                                } else {
+                                    expandedSeries.insert(summary.baseName)
+                                    // Inicializa estado de subsecciones si no existe
+                                    ensureSubsectionsState(for: summary)
+                                }
+                            } label: {
+                                MedicationSeriesRow(summary: summary)
+                                    .contentShape(Rectangle())
                             }
-                        } label: {
-                            MedicationSeriesRow(summary: summary)
-                                .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            
+                            Spacer(minLength: 0)
+                            
+                            Button {
+                                startDeleteSeries(summary)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Eliminar serie")
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -254,6 +272,20 @@ struct PetMedicationsTab: View {
             } else {
                 Text("Esta acción no se puede deshacer.")
             }
+        }
+        .confirmationDialog(
+            "¿Eliminar toda la serie?",
+            isPresented: $showingSeriesDeleteDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Eliminar \(pendingSeriesCount) dosis", role: .destructive) {
+                if let base = pendingSeriesBase {
+                    deleteSeries(baseName: base)
+                }
+            }
+            Button("Cancelar", role: .cancel) { clearSeriesPending() }
+        } message: {
+            Text("Se eliminarán todas las dosis de esta serie. Esta acción no se puede deshacer.")
         }
     }
     
@@ -611,6 +643,31 @@ private extension PetMedicationsTab {
         pendingFutureCount = 0
         pendingDelete = nil
         showingDeleteDialog = false
+    }
+    
+    // MARK: - Borrado de serie completa
+    func startDeleteSeries(_ summary: PetDetailViewModel.MedicationSeriesSummary) {
+        pendingSeriesBase = summary.baseName
+        pendingSeriesCount = summary.items.count
+        showingSeriesDeleteDialog = true
+    }
+    
+    func deleteSeries(baseName: String) {
+        let all = viewModel.medications.filter { DoseSeries.splitDoseBase(from: $0.name) == baseName }
+        for med in all {
+            NotificationManager.shared.cancelNotification(id: med.id)
+            context.delete(med)
+        }
+        try? context.save()
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+        viewModel.fetchEvents()
+        clearSeriesPending()
+    }
+    
+    func clearSeriesPending() {
+        pendingSeriesBase = nil
+        pendingSeriesCount = 0
+        showingSeriesDeleteDialog = false
     }
 }
 

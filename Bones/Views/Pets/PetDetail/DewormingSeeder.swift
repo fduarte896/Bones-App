@@ -3,7 +3,7 @@ import SwiftData
 
 @MainActor
 enum DewormingSeeder {
-    // UserDefaults key to ensure we only seed once per install
+    // UserDefaults key to ensure we only seed once per install (deworming + vaccines)
     private static let didSeedKey = "didSeedDewormingDemo"
 
     /// Seeds demo Deworming data globally on first run if the store has none yet.
@@ -20,7 +20,13 @@ enum DewormingSeeder {
             // If fetching fails, don't attempt to seed to avoid duplications
             return
         }
-        guard existing.isEmpty else {
+        let existingVaccines: [Vaccine]
+        do {
+            existingVaccines = try context.fetch(FetchDescriptor<Vaccine>())
+        } catch {
+            return
+        }
+        guard existing.isEmpty && existingVaccines.isEmpty else {
             UserDefaults.standard.set(true, forKey: didSeedKey)
             return
         }
@@ -30,7 +36,7 @@ enum DewormingSeeder {
         // Here we create a demo pet if none exists to ensure the demo data is visible.
         let petFetch = FetchDescriptor<Pet>(predicate: nil)
         let demoPet: Pet
-        if let somePet = try? context.fetch(petFetch).first, let pet = somePet {
+        if let pet = try? context.fetch(petFetch).first {
             demoPet = pet
         } else {
             // Create a demo pet
@@ -122,6 +128,42 @@ enum DewormingSeeder {
         [a1, a2, aBooster,
          b1, b2, bBooster,
          c1, c2, c3, cR1, cR2, cR3].forEach { context.insert($0) }
+
+        // Vacunas de ejemplo
+        // Antirrábica: una aplicada hace 11 meses (completada) y próximo refuerzo en 1 mes
+        let rabiesPast = Vaccine(date: cal.date(byAdding: .month, value: -11, to: now)!,
+                                  pet: demoPet,
+                                  vaccineName: "Antirrábica",
+                                  manufacturer: nil,
+                                  notes: nil)
+        rabiesPast.isCompleted = true
+        let rabiesNext = Vaccine(date: cal.date(byAdding: .month, value: 1, to: now)!,
+                                 pet: demoPet,
+                                 vaccineName: "Antirrábica",
+                                 manufacturer: nil,
+                                 notes: nil)
+
+        // Polivalente (DHPPi): esquema con una pasada y una próxima
+        let dhppi1 = Vaccine(date: cal.date(byAdding: .month, value: -2, to: now)!,
+                              pet: demoPet,
+                              vaccineName: "Polivalente (DHPPi)",
+                              manufacturer: nil,
+                              notes: "Dosis 1")
+        dhppi1.isCompleted = true
+        let dhppi2 = Vaccine(date: cal.date(byAdding: .day, value: 20, to: now)!,
+                              pet: demoPet,
+                              vaccineName: "Polivalente (DHPPi)",
+                              manufacturer: nil,
+                              notes: "Dosis 2")
+
+        // Leptospirosis: próxima en 10 días
+        let lepto = Vaccine(date: cal.date(byAdding: .day, value: 10, to: now)!,
+                             pet: demoPet,
+                             vaccineName: "Leptospirosis",
+                             manufacturer: nil,
+                             notes: nil)
+
+        [rabiesPast, rabiesNext, dhppi1, dhppi2, lepto].forEach { context.insert($0) }
 
         do {
             try context.save()

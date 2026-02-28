@@ -56,13 +56,13 @@ struct PetsListView: View {
                     .navigationTitle("Resumen")
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
-                            NavigationLink {
-                                PetDetailView(pet: pet)
-                            } label: {
-                                Image(systemName: "chevron.right.circle")
+                            Button { isPresentingAdd = true } label: {
+                                Image(systemName: "plus")
                             }
-                            .accessibilityLabel("Ver detalle")
                         }
+                    }
+                    .sheet(isPresented: $isPresentingAdd) {
+                        AddPetSheet()
                     }
                     .sheet(item: $petToEdit) { pet in
                         EditPetSheet(pet: pet)
@@ -244,7 +244,6 @@ private struct SinglePetDashboardView: View {
     @State private var quickAddKind: EventKind = .medication
     @State private var isPresentingEdit = false
     @State private var showingDeleteAlert = false
-    @State private var isPresentingAddPet = false   // FAB: añadir otra mascota
     
     // Layout de tarjetas: dos columnas fijas
     private let twoCols = [ GridItem(.flexible(), spacing: 12),
@@ -296,33 +295,11 @@ private struct SinglePetDashboardView: View {
             }
             .padding(.vertical, 12)
         }
-        // FAB “+” para añadir otra mascota
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                isPresentingAddPet = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(
-                        Circle()
-                            .fill(Color.accentColor)
-                    )
-                    .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 4)
-            }
-            .padding(.trailing, 20)
-            .padding(.bottom, 20)
-            .accessibilityLabel("Añadir mascota")
-        }
         .sheet(isPresented: $showingQuickAdd) {
             EventQuickAddSheet(pet: pet, initialKind: quickAddKind)
         }
         .sheet(isPresented: $isPresentingEdit) {
             EditPetSheet(pet: pet)
-        }
-        .sheet(isPresented: $isPresentingAddPet) {
-            AddPetSheet()
         }
         .alert("¿Eliminar mascota?", isPresented: $showingDeleteAlert) {
             Button("Eliminar", role: .destructive) { deletePet() }

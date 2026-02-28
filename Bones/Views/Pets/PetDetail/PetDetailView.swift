@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import Foundation
 
 
 // MARK: - Detalle de la mascota
@@ -33,6 +34,8 @@ struct PetDetailView: View {
     
     // Estado del subsegmento de Salud (elevado desde PetHealthTab)
     @State private var healthSegment: PetHealthTab.HealthSegment = .vaccines
+
+    @AppStorage("didSeedDewormingDemo") private var didSeedDewormingDemo: Bool = false
 
     // Inicializador para inyectar el ViewModel
     init(pet: Pet) {
@@ -234,8 +237,11 @@ struct PetDetailView: View {
             EditPetSheet(pet: pet)
         }
 
-        // Inyectamos el context real en el ViewModel al aparecer
-        .onAppear { viewModel.inject(context: context) }
+        // Inyectamos el context real en el ViewModel al aparecer y sembramos demo si es necesario
+        .onAppear {
+            viewModel.inject(context: context)
+            seedDewormingIfNeeded()
+        }
         // DEBUG: trazas de navegación entre tabs/subtabs
         .onChange(of: selectedTab) { old, new in
             print("[QuickAdd] selectedTab \(old) → \(new)")
@@ -252,6 +258,103 @@ struct PetDetailView: View {
         let isDeworming: Bool
     }
     @State private var quickAddConfig: QuickAddConfig?
+}
+
+private extension PetDetailView {
+    func seedDewormingIfNeeded() {
+        guard !didSeedDewormingDemo else { return }
+
+        // Global: si ya existen desparasitantes en la base, no sembrar
+        let anyDeworming = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
+        if !anyDeworming.isEmpty {
+            didSeedDewormingDemo = true
+            return
+        }
+        
+        // Sembrando para la mascota actualmente abierta en primer arranque global
+
+        let cal = Calendar.current
+        let now = Date()
+
+        // Serie A: Drontal Plus — hoy + 15 días (2/2), luego refuerzo a 3 meses
+        let seriesA = UUID()
+        let a1 = Deworming(date: now,
+                           pet: pet,
+                           notes: "Drontal Plus (dosis 1/2)",
+                           prescriptionImageData: nil,
+                           seriesID: seriesA)
+        a1.isCompleted = true
+        let a2 = Deworming(date: cal.date(byAdding: .day, value: 15, to: now)!,
+                           pet: pet,
+                           notes: "Drontal Plus (dosis 2/2)",
+                           prescriptionImageData: nil,
+                           seriesID: seriesA)
+        let aBooster = Deworming(date: cal.date(byAdding: .month, value: 3, to: now)!,
+                                 pet: pet,
+                                 notes: "Drontal Plus",
+                                 prescriptionImageData: nil,
+                                 seriesID: seriesA)
+
+        // Serie B: Endogard — 2/2 con una vencida y una futura, y un refuerzo a 3 meses
+        let seriesB = UUID()
+        let b1 = Deworming(date: cal.date(byAdding: .day, value: -10, to: now)!,
+                           pet: pet,
+                           notes: "Endogard (dosis 1/2)",
+                           prescriptionImageData: nil,
+                           seriesID: seriesB)
+        let b2 = Deworming(date: cal.date(byAdding: .day, value: 5, to: now)!,
+                           pet: pet,
+                           notes: "Endogard (dosis 2/2)",
+                           prescriptionImageData: nil,
+                           seriesID: seriesB)
+        let bBooster = Deworming(date: cal.date(byAdding: .month, value: 3, to: now)!,
+                                 pet: pet,
+                                 notes: "Endogard",
+                                 prescriptionImageData: nil,
+                                 seriesID: seriesB)
+
+        // Serie C: Panacur — 3 días seguidos y repetir el ciclo a los 14 días
+        let seriesC = UUID()
+        let c1 = Deworming(date: cal.date(byAdding: .day, value: -1, to: now)!,
+                           pet: pet,
+                           notes: "Panacur (dosis 1/3)",
+                           prescriptionImageData: nil,
+                           seriesID: seriesC)
+        c1.isCompleted = true
+        let c2 = Deworming(date: now,
+                           pet: pet,
+                           notes: "Panacur (dosis 2/3)",
+                           prescriptionImageData: nil,
+                           seriesID: seriesC)
+        let c3 = Deworming(date: cal.date(byAdding: .day, value: 1, to: now)!,
+                           pet: pet,
+                           notes: "Panacur (dosis 3/3)",
+                           prescriptionImageData: nil,
+                           seriesID: seriesC)
+        let cR1 = Deworming(date: cal.date(byAdding: .day, value: 14, to: now)!,
+                            pet: pet,
+                            notes: "Panacur (dosis 1/3)",
+                            prescriptionImageData: nil,
+                            seriesID: seriesC)
+        let cR2 = Deworming(date: cal.date(byAdding: .day, value: 15, to: now)!,
+                            pet: pet,
+                            notes: "Panacur (dosis 2/3)",
+                            prescriptionImageData: nil,
+                            seriesID: seriesC)
+        let cR3 = Deworming(date: cal.date(byAdding: .day, value: 16, to: now)!,
+                            pet: pet,
+                            notes: "Panacur (dosis 3/3)",
+                            prescriptionImageData: nil,
+                            seriesID: seriesC)
+
+        // Insertar en contexto (evitando duplicados si ya hay datos)
+        [a1, a2, aBooster,
+         b1, b2, bBooster,
+         c1, c2, c3, cR1, cR2, cR3].forEach { context.insert($0) }
+        try? context.save()
+        didSeedDewormingDemo = true
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
 }
 
 // MARK: - Enum de tabs
@@ -293,7 +396,20 @@ private func ageString(for birth: Date?) -> String? {
 // MARK: - Preview
 
 #Preview {
-    // 1. Creamos una instancia de Pet con datos de ejemplo
+    // 1) Container en memoria con el esquema necesario
+    let schema = Schema([
+        Pet.self,
+        Medication.self,
+        Vaccine.self,
+        Deworming.self,
+        Grooming.self,
+        WeightEntry.self
+    ])
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: schema, configurations: config)
+    let ctx = ModelContext(container)
+
+    // 2) Mascota demo
     let samplePet = Pet(
         name: "Loki",
         species: .perro,
@@ -302,5 +418,113 @@ private func ageString(for birth: Date?) -> String? {
         sex: .male,
         color: "White"
     )
-    PetDetailView(pet: samplePet)
+    ctx.insert(samplePet)
+
+    // 3) Siembra de desparasitación (varios ejemplos)
+    let cal = Calendar.current
+    let now = Date()
+
+    // Serie A: Drontal Plus — hoy + 15 días (2/2), luego refuerzo a 3 meses
+    let seriesA = UUID()
+    let a1 = Deworming(date: now,
+                       pet: samplePet,
+                       notes: "Drontal Plus (dosis 1/2)",
+                       prescriptionImageData: nil,
+                       seriesID: seriesA)
+    a1.isCompleted = true
+    let a2 = Deworming(date: cal.date(byAdding: .day, value: 15, to: now)!,
+                       pet: samplePet,
+                       notes: "Drontal Plus (dosis 2/2)",
+                       prescriptionImageData: nil,
+                       seriesID: seriesA)
+    let aBooster = Deworming(date: cal.date(byAdding: .month, value: 3, to: now)!,
+                             pet: samplePet,
+                             notes: "Drontal Plus",
+                             prescriptionImageData: nil,
+                             seriesID: seriesA)
+
+    // Serie B: Endogard — 2/2 con una vencida y una futura, y un refuerzo a 3 meses
+    let seriesB = UUID()
+    let b1 = Deworming(date: cal.date(byAdding: .day, value: -10, to: now)!,
+                       pet: samplePet,
+                       notes: "Endogard (dosis 1/2)",
+                       prescriptionImageData: nil,
+                       seriesID: seriesB)
+    // b1 queda pendiente para visualizar "Vencida"
+    let b2 = Deworming(date: cal.date(byAdding: .day, value: 5, to: now)!,
+                       pet: samplePet,
+                       notes: "Endogard (dosis 2/2)",
+                       prescriptionImageData: nil,
+                       seriesID: seriesB)
+    let bBooster = Deworming(date: cal.date(byAdding: .month, value: 3, to: now)!,
+                             pet: samplePet,
+                             notes: "Endogard",
+                             prescriptionImageData: nil,
+                             seriesID: seriesB)
+
+    // Serie C: Panacur — 3 días seguidos y repetir el ciclo a los 14 días
+    let seriesC = UUID()
+    let c1 = Deworming(date: cal.date(byAdding: .day, value: -1, to: now)!,
+                       pet: samplePet,
+                       notes: "Panacur (dosis 1/3)",
+                       prescriptionImageData: nil,
+                       seriesID: seriesC)
+    c1.isCompleted = true
+    let c2 = Deworming(date: now,
+                       pet: samplePet,
+                       notes: "Panacur (dosis 2/3)",
+                       prescriptionImageData: nil,
+                       seriesID: seriesC)
+    let c3 = Deworming(date: cal.date(byAdding: .day, value: 1, to: now)!,
+                       pet: samplePet,
+                       notes: "Panacur (dosis 3/3)",
+                       prescriptionImageData: nil,
+                       seriesID: seriesC)
+    // Repetición del ciclo a los 14 días
+    let cR1 = Deworming(date: cal.date(byAdding: .day, value: 14, to: now)!,
+                        pet: samplePet,
+                        notes: "Panacur (dosis 1/3)",
+                        prescriptionImageData: nil,
+                        seriesID: seriesC)
+    let cR2 = Deworming(date: cal.date(byAdding: .day, value: 15, to: now)!,
+                        pet: samplePet,
+                        notes: "Panacur (dosis 2/3)",
+                        prescriptionImageData: nil,
+                        seriesID: seriesC)
+    let cR3 = Deworming(date: cal.date(byAdding: .day, value: 16, to: now)!,
+                        pet: samplePet,
+                        notes: "Panacur (dosis 3/3)",
+                        prescriptionImageData: nil,
+                        seriesID: seriesC)
+
+    // Serie D: Milbemax — hoy y repetir cada 6 meses (ejemplo de recurrencia)
+    let seriesD = UUID()
+    let d1 = Deworming(date: cal.date(byAdding: .day, value: -30, to: now)!,
+                       pet: samplePet,
+                       notes: "Milbemax",
+                       prescriptionImageData: nil,
+                       seriesID: seriesD)
+    d1.isCompleted = true
+    let d2 = Deworming(date: now,
+                       pet: samplePet,
+                       notes: "Milbemax",
+                       prescriptionImageData: nil,
+                       seriesID: seriesD)
+    let dNext = Deworming(date: cal.date(byAdding: .month, value: 6, to: now)!,
+                          pet: samplePet,
+                          notes: "Milbemax",
+                          prescriptionImageData: nil,
+                          seriesID: seriesD)
+
+    // Insertar eventos en el contexto y guardar
+    [a1, a2, aBooster,
+     b1, b2, bBooster,
+     c1, c2, c3, cR1, cR2, cR3,
+     d1, d2, dNext].forEach { ctx.insert($0) }
+    try? ctx.save()
+
+    // 4) Render
+    return PetDetailView(pet: samplePet)
+        .modelContainer(container)
 }
+

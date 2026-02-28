@@ -41,6 +41,9 @@ final class EventsListViewModel: ObservableObject {
         didSet { buildSections() }
     }
     @Published private(set) var allPets: [Pet] = []
+    @Published var searchQuery: String = "" {
+        didSet { buildSections() }
+    }
 
     private func fetchPets() {
         allPets = (try? context.fetch(FetchDescriptor<Pet>(sortBy: [SortDescriptor(\.name)]))) ?? []
@@ -100,7 +103,8 @@ final class EventsListViewModel: ObservableObject {
         // 1. Filtrado por tipo y (opcional) mascota
         let filtered = allEvents.filter { event in
             filter.matches(event) &&
-            (petFilter.id == nil || event.pet?.id == petFilter.id)
+            (petFilter.id == nil || event.pet?.id == petFilter.id) &&
+            matchesSearch(event: event, query: searchQuery)
         }
         
         // 2. “Hoy” debe incluir todos los pendientes de hoy (aunque ya hayan pasado) + futuros > ahora
@@ -145,6 +149,74 @@ final class EventsListViewModel: ObservableObject {
         }
         
         sections = tmpSections
+    }
+
+    // MARK: - Search
+    private func matchesSearch(event: any BasicEvent, query: String) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        let needle = trimmed.lowercased()
+
+        // Texto
+        let textFields: [String] = [
+            event.displayName,
+            event.displayType,
+            event.notes ?? "",
+            event.pet?.name ?? ""
+        ]
+        if textFields.contains(where: { $0.lowercased().contains(needle) }) {
+            return true
+        }
+
+        // Fecha: intenta parsear y comparar por día
+        if let qDate = parseDate(from: trimmed) {
+            return Calendar.current.isDate(event.date, inSameDayAs: qDate)
+        }
+
+        // Fecha: fallback por coincidencia en strings formateados
+        let dateStrings = formattedDateStrings(for: event.date)
+        return dateStrings.contains(where: { $0.lowercased().contains(needle) })
+    }
+
+    private func parseDate(from input: String) -> Date? {
+        let formats = [
+            "d/M/yyyy",
+            "d/M/yy",
+            "dd/MM/yyyy",
+            "dd/MM/yy",
+            "d/M",
+            "dd/MM"
+        ]
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.timeZone = .current
+        for f in formats {
+            formatter.dateFormat = f
+            if let date = formatter.date(from: input) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    private func formattedDateStrings(for date: Date) -> [String] {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.timeZone = .current
+        let formats = [
+            "d/M/yyyy",
+            "dd/MM/yyyy",
+            "d/M",
+            "dd/MM",
+            "d MMM",
+            "d MMMM",
+            "MMM d",
+            "MMMM d"
+        ]
+        return formats.map {
+            formatter.dateFormat = $0
+            return formatter.string(from: date)
+        }
     }
     
     // MARK: – Mutating helpers

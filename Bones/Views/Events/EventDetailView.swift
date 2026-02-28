@@ -259,7 +259,7 @@ private struct MedicationDetailView: View {
                 .pickerStyle(.segmented)
                 
                 if scheduleMode == .interval {
-                    IntervalRow(value: $intervalValue, unit: $intervalUnit)
+                    IntervalRow(value: $intervalValue, unit: $intervalUnit, allowedUnits: [.hours])
                     Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...90)
                     
                     if let summary = intervalSummary(
@@ -655,6 +655,7 @@ private struct MedicationDetailView: View {
     private struct IntervalRow: View {
         @Binding var value: Int
         @Binding var unit: IntervalUnit
+        var allowedUnits: [IntervalUnit] = IntervalUnit.allCases
         var body: some View {
             HStack(spacing: 12) {
                 Text("Cada")
@@ -663,18 +664,25 @@ private struct MedicationDetailView: View {
                 Text("\(value)")
                     .font(.body.monospacedDigit())
                 
-                Picker(selection: $unit) {
-                    ForEach(IntervalUnit.allCases) { option in
-                        Text(option.label).tag(option)
-                    }
-                } label: {
-                    Text(unit.label)
+                if allowedUnits.count == 1, let only = allowedUnits.first {
+                    Text(only.label)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Picker(selection: $unit) {
+                        ForEach(allowedUnits) { option in
+                            Text(option.label).tag(option)
+                        }
+                    } label: {
+                        Text(unit.label)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(minWidth: 80)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(minWidth: 80)
                 
                 Spacer()
                 
@@ -1282,4 +1290,3 @@ private enum EventDetailPreviewData {
     }
     .modelContainer(container)
 }
-

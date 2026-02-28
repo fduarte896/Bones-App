@@ -10,7 +10,19 @@
 		0EDA031E2E8C837F00F002E6 /* AIEngineImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDA031D2E8C837F00F002E6 /* AIEngineImpl.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0E1EF2872F51F6EB0081AAB4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0E7A4D232E2061DF00102333 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0E7A4D2A2E2061DF00102333;
+			remoteInfo = Bones;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		0E1EF27E2F5110C50081AAB4 /* AddPetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPetTests.swift; sourceTree = "<group>"; };
+		0E1EF2832F51F6EB0081AAB4 /* BonesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BonesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0E7A4D2B2E2061DF00102333 /* Bones.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bones.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0EDA031D2E8C837F00F002E6 /* AIEngineImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngineImpl.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -26,6 +38,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0E1EF2842F51F6EB0081AAB4 /* BonesTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = BonesTests;
+			sourceTree = "<group>";
+		};
 		0E7A4D2D2E2061DF00102333 /* Bones */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -37,6 +54,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0E1EF2802F51F6EB0081AAB4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0E7A4D282E2061DF00102333 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -47,12 +71,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0E1EF27D2F5110BE0081AAB4 /* BonesTests */ = {
+			isa = PBXGroup;
+			children = (
+				0E1EF27E2F5110C50081AAB4 /* AddPetTests.swift */,
+			);
+			path = BonesTests;
+			sourceTree = "<group>";
+		};
 		0E7A4D222E2061DF00102333 = {
 			isa = PBXGroup;
 			children = (
 				0E7A4D2D2E2061DF00102333 /* Bones */,
+				0E1EF2842F51F6EB0081AAB4 /* BonesTests */,
 				0E7A4D2C2E2061DF00102333 /* Products */,
 				0EDA031D2E8C837F00F002E6 /* AIEngineImpl.swift */,
+				0E1EF27D2F5110BE0081AAB4 /* BonesTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -60,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				0E7A4D2B2E2061DF00102333 /* Bones.app */,
+				0E1EF2832F51F6EB0081AAB4 /* BonesTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -67,6 +102,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0E1EF2822F51F6EB0081AAB4 /* BonesTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0E1EF2892F51F6EB0081AAB4 /* Build configuration list for PBXNativeTarget "BonesTests" */;
+			buildPhases = (
+				0E1EF27F2F51F6EB0081AAB4 /* Sources */,
+				0E1EF2802F51F6EB0081AAB4 /* Frameworks */,
+				0E1EF2812F51F6EB0081AAB4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0E1EF2882F51F6EB0081AAB4 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0E1EF2842F51F6EB0081AAB4 /* BonesTests */,
+			);
+			name = BonesTests;
+			packageProductDependencies = (
+			);
+			productName = BonesTests;
+			productReference = 0E1EF2832F51F6EB0081AAB4 /* BonesTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		0E7A4D2A2E2061DF00102333 /* Bones */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0E7A4D362E2061E000102333 /* Build configuration list for PBXNativeTarget "Bones" */;
@@ -96,9 +154,13 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1640;
+				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
+					0E1EF2822F51F6EB0081AAB4 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 0E7A4D2A2E2061DF00102333;
+					};
 					0E7A4D2A2E2061DF00102333 = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -119,11 +181,19 @@
 			projectRoot = "";
 			targets = (
 				0E7A4D2A2E2061DF00102333 /* Bones */,
+				0E1EF2822F51F6EB0081AAB4 /* BonesTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0E1EF2812F51F6EB0081AAB4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0E7A4D292E2061DF00102333 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -134,6 +204,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0E1EF27F2F51F6EB0081AAB4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0E7A4D272E2061DF00102333 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -144,7 +221,81 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		0E1EF2882F51F6EB0081AAB4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0E7A4D2A2E2061DF00102333 /* Bones */;
+			targetProxy = 0E1EF2872F51F6EB0081AAB4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		0E1EF28A2F51F6EB0081AAB4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RS976WXGSN;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = FDevelopers.BonesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Bones.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Bones";
+			};
+			name = Debug;
+		};
+		0E1EF28B2F51F6EB0081AAB4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RS976WXGSN;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = FDevelopers.BonesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Bones.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Bones";
+			};
+			name = Release;
+		};
+		0E1EF28C2F51F6EB0081AAB4 /* TestFlight */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RS976WXGSN;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = FDevelopers.BonesTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Bones.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Bones";
+			};
+			name = TestFlight;
+		};
 		0E7A4D342E2061E000102333 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -272,7 +423,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = RS976WXGSN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -288,7 +439,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = FelipeDuarte.Bones;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -303,7 +454,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = RS976WXGSN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -319,7 +470,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = FelipeDuarte.Bones;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
@@ -392,7 +543,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = RS976WXGSN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -408,7 +559,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = FelipeDuarte.Bones;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = TESTFLIGHT;
@@ -421,6 +572,16 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0E1EF2892F51F6EB0081AAB4 /* Build configuration list for PBXNativeTarget "BonesTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0E1EF28A2F51F6EB0081AAB4 /* Debug */,
+				0E1EF28B2F51F6EB0081AAB4 /* Release */,
+				0E1EF28C2F51F6EB0081AAB4 /* TestFlight */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		0E7A4D262E2061DF00102333 /* Build configuration list for PBXProject "Bones" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
