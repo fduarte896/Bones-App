@@ -169,24 +169,6 @@ private struct MedicationDetailView: View {
     @Environment(\.modelContext) private var context
     
     // MARK: – Añadir próximas dosis (estado local)
-    private enum ScheduleMode: String, CaseIterable, Identifiable {
-        case interval, perDay
-        var id: Self { self }
-        var label: String { self == .interval ? "Por intervalo" : "Por día" }
-    }
-    private enum IntervalUnit: String, CaseIterable, Identifiable {
-        case hours, days, weeks, months
-        var id: Self { self }
-        var label: String {
-            switch self {
-            case .hours:  "horas"
-            case .days:   "días"
-            case .weeks:  "semanas"
-            case .months: "meses"
-            }
-        }
-    }
-    
     @State private var scheduleMode: ScheduleMode = .interval
     @State private var intervalValue: Int = 8
     @State private var intervalUnit: IntervalUnit = .hours
@@ -194,6 +176,23 @@ private struct MedicationDetailView: View {
     @State private var durationDays: Int = 1
     @State private var isAdding = false
     @State private var infoText: String?
+    
+    private enum AddDoseAction: String, CaseIterable, Identifiable {
+        case single = "Añadir una dosis"
+        case series = "Añadir una serie"
+        var id: Self { self }
+    }
+    @State private var addDoseAction: AddDoseAction = .single
+    
+    // Ancla para próxima dosis
+    private enum NextDoseAnchor: String, CaseIterable, Identifiable {
+        case fromSeries = "Según serie"
+        case now = "Ahora"
+        case custom = "Personalizada"
+        var id: Self { self }
+    }
+    @State private var nextDoseAnchor: NextDoseAnchor = .fromSeries
+    @State private var customAnchorDate: Date = Date()
     
     var body: some View {
         Form {
@@ -224,79 +223,89 @@ private struct MedicationDetailView: View {
                     .onChange(of: med.date) { _, _ in reschedule(for: med) }
             }
             
-            // MARK: – Nueva sección: Añadir próximas dosis
-            Section("Añadir próximas dosis") {
-                // Acción simple: una sola dosis extra, basada en serie/frecuencia (no depende de controles)
-                if let next = suggestedNextDoseDate() {
-                    LabeledContent("Siguiente dosis") {
-                        Text(next.formatted(date: .abbreviated, time: .shortened))
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    LabeledContent("Siguiente sugerida") {
-                        Text("No determinada · se usará +8 h")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                Button {
-                    Task { await addNextDoseSmart() }
-                } label: {
-                    Label(isAdding ? "Añadiendo…" : "Añadir siguiente dosis", systemImage: "plus.circle")
-                }
-                .disabled(isAdding)
-                
-                // Controles avanzados para series (cuando quieren varias)
-
-            }
-            
-            Section ("Añadir otras dosis") {
-                Picker("Modo", selection: $scheduleMode) {
-                    ForEach(ScheduleMode.allCases) { m in
-                        Text(m.label).tag(m)
+            // MARK: – Programación de dosis
+            Section("Programar dosis") {
+                Picker("¿Qué necesitas?", selection: $addDoseAction) {
+                    ForEach(AddDoseAction.allCases) { option in
+                        Text(option.rawValue).tag(option)
                     }
                 }
                 .pickerStyle(.segmented)
                 
-                if scheduleMode == .interval {
-                    IntervalRow(value: $intervalValue, unit: $intervalUnit, allowedUnits: [.hours])
-                    Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...90)
-                    
-                    if let summary = intervalSummary(
-                        start: med.date,
-                        durationDays: durationDays,
-                        stepValue: intervalValue,
-                        stepUnit: intervalUnit
-                    ) {
-                        Text("Se crearán \(summary.total) dosis en total (incluida la actual). Última: \(summary.last.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                Picker("Referencia", selection: $nextDoseAnchor) {
+                    ForEach(NextDoseAnchor.allCases) { anchor in
+                        Text(anchor.rawValue).tag(anchor)
                     }
-                } else {
-                    Stepper("\(timesPerDay) × por día", value: $timesPerDay, in: 1...12)
-                    Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...30)
+                }
+                .pickerStyle(.segmented)
+                
+                if nextDoseAnchor == .custom {
+                    DatePicker("Fecha de inicio",
+                               selection: $customAnchorDate,
+                               displayedComponents: [.date, .hourAndMinute])
                 }
                 
-                if let preview = medicationPreview(
-                    start: med.date,
-                    mode: scheduleMode,
-                    intervalValue: intervalValue,
-                    intervalUnit: intervalUnit,
-                    durationDays: durationDays,
-                    timesPerDay: timesPerDay
-                ), preview.count > 1 {
-                    MedicationPreviewView(dates: preview)
-                        .padding(.top, 4)
+                LabeledContent(nextDoseAnchor == .fromSeries ? "Siguiente dosis" : "Fecha elegida") {
+                    Text(resolvedAnchorDate().formatted(date: .abbreviated, time: .shortened))
+                        .foregroundStyle(.secondary)
                 }
                 
-                HStack {
-                    Spacer()
+                if addDoseAction == .single {
                     Button {
-                        Task { await addSeries() }
+                        Task { await addNextDoseSmart() }
                     } label: {
-                        Label(isAdding ? "Añadiendo…" : "Añadir serie", systemImage: "calendar.badge.plus")
+                        Label(isAdding ? "Añadiendo…" : "Añadir siguiente dosis", systemImage: "plus.circle")
                     }
                     .disabled(isAdding)
+                } else {
+                    Picker("Modo", selection: $scheduleMode) {
+                        ForEach(ScheduleMode.allCases) { m in
+                            Text(m.label).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    let anchorDate = resolvedAnchorDate()
+                    if scheduleMode == .interval {
+                        IntervalRow(value: $intervalValue, unit: $intervalUnit, allowedUnits: [.hours])
+                        Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...90)
+                        
+                        if let summary = intervalSummary(
+                            start: anchorDate,
+                            durationDays: durationDays,
+                            stepValue: intervalValue,
+                            stepUnit: intervalUnit
+                        ) {
+                            Text("Se crearán \(summary.total) dosis en total (incluida la primera). Última: \(summary.last.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Stepper("\(timesPerDay) × por día", value: $timesPerDay, in: 1...12)
+                        Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...30)
+                    }
+                    
+                    if let preview = medicationPreview(
+                        start: anchorDate,
+                        mode: scheduleMode,
+                        intervalValue: intervalValue,
+                        intervalUnit: intervalUnit,
+                        durationDays: durationDays,
+                        timesPerDay: timesPerDay
+                    ), preview.count > 0 {
+                        MedicationPreviewView(dates: preview)
+                            .padding(.top, 4)
+                    }
+                    
+                    HStack {
+                        Spacer()
+                        Button {
+                            Task { await addSeries() }
+                        } label: {
+                            Label(isAdding ? "Añadiendo…" : "Añadir serie", systemImage: "calendar.badge.plus")
+                        }
+                        .disabled(isAdding)
+                    }
                 }
                 
                 if let infoText, !infoText.isEmpty {
@@ -467,15 +476,20 @@ private struct MedicationDetailView: View {
         return last.date.addingTimeInterval(8 * 3600)
     }
     
+    private func resolvedAnchorDate() -> Date {
+        switch nextDoseAnchor {
+        case .fromSeries:
+            return suggestedNextDoseDate() ?? med.date.addingTimeInterval(8 * 3600)
+        case .now:
+            return Date()
+        case .custom:
+            return customAnchorDate
+        }
+    }
+    
     // MARK: - Helpers de programación (locales a esta vista)
     private func addInterval(_ value: Int, unit: IntervalUnit, to date: Date) -> Date {
-        let cal = Calendar.current
-        switch unit {
-        case .hours:  return cal.date(byAdding: .hour,  value: value, to: date) ?? date
-        case .days:   return cal.date(byAdding: .day,   value: value, to: date) ?? date
-        case .weeks:  return cal.date(byAdding: .day,   value: 7 * value, to: date) ?? date
-        case .months: return cal.date(byAdding: .month, value: value, to: date) ?? date
-        }
+        MedicationScheduling.addInterval(value, unit: unit, to: date)
     }
     
     private func medicationPreview(start: Date,
@@ -484,51 +498,22 @@ private struct MedicationDetailView: View {
                                    intervalUnit: IntervalUnit,
                                    durationDays: Int,
                                    timesPerDay: Int) -> [Date]? {
-        let cal = Calendar.current
-        switch mode {
-        case .interval:
-            let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
-            var dates: [Date] = [start]
-            var current = start
-            while true {
-                let next = addInterval(intervalValue, unit: intervalUnit, to: current)
-                if next > end { break }
-                dates.append(next)
-                current = next
-            }
-            return dates
-        case .perDay:
-            let total = max(1, timesPerDay * durationDays)
-            let stepHours = Int((24.0 / max(1.0, Double(timesPerDay))).rounded())
-            var dates: [Date] = [start]
-            var current = start
-            if total > 1 {
-                for _ in 1..<total {
-                    current = cal.date(byAdding: .hour, value: stepHours, to: current) ?? current
-                    dates.append(current)
-                }
-            }
-            return dates
-        }
+        MedicationScheduling.preview(start: start,
+                                     mode: mode,
+                                     intervalValue: intervalValue,
+                                     intervalUnit: intervalUnit,
+                                     durationDays: durationDays,
+                                     timesPerDay: timesPerDay)
     }
     
     private func intervalSummary(start: Date,
                                  durationDays: Int,
                                  stepValue: Int,
                                  stepUnit: IntervalUnit) -> (total: Int, last: Date)? {
-        let cal = Calendar.current
-        let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
-        var current = start
-        var last = start
-        var count = 1
-        while true {
-            let next = addInterval(stepValue, unit: stepUnit, to: current)
-            if next > end { break }
-            last = next
-            count += 1
-            current = next
-        }
-        return (count, last)
+        MedicationScheduling.intervalSummary(start: start,
+                                            durationDays: durationDays,
+                                            stepValue: stepValue,
+                                            stepUnit: stepUnit)
     }
     
     // MARK: - Inserción y utilidades de serie
@@ -563,8 +548,7 @@ private struct MedicationDetailView: View {
         isAdding = true
         defer { isAdding = false }
         
-        // Calcular próxima fecha sugerida
-        let next = suggestedNextDoseDate() ?? med.date.addingTimeInterval(8 * 3600)
+        let next = resolvedAnchorDate()
         
         let base = DoseSeries.splitDoseBase(from: med.name)
         if existsMedication(petID: petID, baseName: base, date: next) {
@@ -603,15 +587,15 @@ private struct MedicationDetailView: View {
         isAdding = true
         defer { isAdding = false }
         
-        // Genera previsualización (incluye la actual)
-        let preview = medicationPreview(start: med.date,
+        // Genera previsualización (incluye la fecha de inicio)
+        let anchorDate = resolvedAnchorDate()
+        let preview = medicationPreview(start: anchorDate,
                                         mode: scheduleMode,
                                         intervalValue: intervalValue,
                                         intervalUnit: intervalUnit,
                                         durationDays: durationDays,
-                                        timesPerDay: timesPerDay) ?? [med.date]
-        // Omitimos la primera (es la actual); el resto serán nuevas
-        let newDates = Array(preview.dropFirst())
+                                        timesPerDay: timesPerDay) ?? [anchorDate]
+        let newDates = preview
         if newDates.isEmpty {
             infoText = "No hay fechas adicionales que añadir."
             return

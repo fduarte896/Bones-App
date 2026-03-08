@@ -25,25 +25,6 @@ enum EventKind: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Intervalo y programaciones
-enum IntervalUnit: String, CaseIterable, Identifiable {
-    case hours, days, weeks, months
-    var id: Self { self }
-    var label: String {
-        switch self {
-        case .hours:  "horas"
-        case .days:   "días"
-        case .weeks:  "semanas"
-        case .months: "meses"
-        }
-    }
-}
-enum ScheduleMode: String, CaseIterable, Identifiable {
-    case interval, perDay
-    var id: Self { self }
-    var label: String { self == .interval ? "Dosis por horas" : "Dosis por día" }
-}
-
 // MARK: - Previsualización de vacunas - Modelo visible a nivel de archivo
 struct VaccinePreview {
     let seriesDates: [Date]
@@ -409,7 +390,12 @@ private extension EventQuickAddSheet {
     // ---- Medicamentos / Desparasitación ----
     var medicationControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ModeChips
+            Picker("Modo", selection: $scheduleMode) {
+                ForEach(ScheduleMode.allCases) { m in
+                    Text(m.label).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
             if scheduleMode == .interval {
                 IntervalRow(value: $intervalValue, unit: $intervalUnit, allowedUnits: [.hours])
                 Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...90)
@@ -532,24 +518,7 @@ private extension EventQuickAddSheet {
         vaccineDoses.firstIndex { $0.id == id } ?? 0
     }
     
-    // Chips de modo (medicamentos)
-    var ModeChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(ScheduleMode.allCases) { m in
-                    Button { scheduleMode = m } label: {
-                        Text(m.label)
-                            .font(.caption)
-                            .padding(.vertical,5).padding(.horizontal,10)
-                            .background(Capsule().fill(scheduleMode == m ? Color.accentColor
-                                                                          : Color(.systemGray5)))
-                            .foregroundStyle(scheduleMode == m ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }.padding(.horizontal,4)
-        }
-    }
+    
     
     struct IntervalRow: View {
         @Binding var value: Int
@@ -967,17 +936,7 @@ private extension EventQuickAddSheet {
     
     // Agrega un intervalo a una fecha según la unidad
     func addInterval(_ value: Int, unit: IntervalUnit, to date: Date) -> Date {
-        let cal = Calendar.current
-        switch unit {
-        case .hours:
-            return cal.date(byAdding: .hour, value: value, to: date) ?? date
-        case .days:
-            return cal.date(byAdding: .day, value: value, to: date) ?? date
-        case .weeks:
-            return cal.date(byAdding: .day, value: 7 * value, to: date) ?? date
-        case .months:
-            return cal.date(byAdding: .month, value: value, to: date) ?? date
-        }
+        MedicationScheduling.addInterval(value, unit: unit, to: date)
     }
     
     // Serie de vacunas (incluye la fecha inicial). 'count' mínimo 1.
@@ -1057,52 +1016,22 @@ private extension EventQuickAddSheet {
                            intervalUnit: IntervalUnit,
                            durationDays: Int,
                            timesPerDay: Int) -> [Date]? {
-        let cal = Calendar.current
-        switch mode {
-        case .interval:
-            let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
-            var dates: [Date] = [start]
-            var current = start
-            while true {
-                let next = addInterval(intervalValue, unit: intervalUnit, to: current)
-                if next > end { break }
-                dates.append(next)
-                current = next
-            }
-            return dates
-        case .perDay:
-            // Replica la lógica de scheduleFuture para que coincida
-            let total = max(1, timesPerDay * durationDays)
-            let stepHours = Int((24.0 / max(1.0, Double(timesPerDay))).rounded())
-            var dates: [Date] = [start]
-            var current = start
-            if total > 1 {
-                for _ in 1..<total {
-                    current = cal.date(byAdding: .hour, value: stepHours, to: current) ?? current
-                    dates.append(current)
-                }
-            }
-            return dates
-        }
+        MedicationScheduling.preview(start: start,
+                                     mode: mode,
+                                     intervalValue: intervalValue,
+                                     intervalUnit: intervalUnit,
+                                     durationDays: durationDays,
+                                     timesPerDay: timesPerDay)
     }
     
     func intervalSummary(start: Date,
                          durationDays: Int,
                          stepValue: Int,
                          stepUnit: IntervalUnit) -> (total: Int, last: Date)? {
-        let cal = Calendar.current
-        let end = cal.date(byAdding: .day, value: durationDays, to: start) ?? start
-        var current = start
-        var last = start
-        var count = 1
-        while true {
-            let next = addInterval(stepValue, unit: stepUnit, to: current)
-            if next > end { break }
-            last = next
-            count += 1
-            current = next
-        }
-        return (count, last)
+        MedicationScheduling.intervalSummary(start: start,
+                                            durationDays: durationDays,
+                                            stepValue: stepValue,
+                                            stepUnit: stepUnit)
     }
     
     // MARK: - RRULE helpers

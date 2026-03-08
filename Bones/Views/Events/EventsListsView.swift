@@ -413,8 +413,13 @@ private struct EventRow: View {
             
             // ---------- Texto ----------
             VStack(alignment: .leading, spacing: 2) {
-                Text(parsed.base)
-                    .fontWeight(.semibold)
+                HStack(spacing: 6) {
+                    Text(parsed.base)
+                        .fontWeight(.semibold)
+                    if isOverdue {
+                        TagChip(text: "Vencida", tint: .red)
+                    }
+                }
                 
                 HStack(spacing: 6) {
                     if !event.displayType.isEmpty {
@@ -424,10 +429,7 @@ private struct EventRow: View {
                         TagChip(text: doseLabel, tint: .secondary)
                     }
                     if !isTodayOrTomorrow {
-                        TagChip(text: event.date.formatted(.dateTime.day().month().year().hour().minute()), tint: .secondary)
-                    }
-                    if isOverdue {
-                        TagChip(text: "Vencida", tint: .red)
+                        TagChip(text: event.date.formatted(.dateTime.day().month().year()), tint: .secondary)
                     }
                 }
             }
