@@ -4,5 +4,16 @@
 <dict>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>Necesitamos enviarte recordatorios de medicamentos y vacunas</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>bones</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>bones</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

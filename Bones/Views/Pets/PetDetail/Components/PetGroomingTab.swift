@@ -66,7 +66,7 @@ struct PetGroomingTab: View {
     var body: some View {
         List {
             if viewModel.groomings.isEmpty {
-                ContentUnavailableView("Sin citas de grooming",
+                ContentUnavailableView("Sin citas de peluquería",
                                        systemImage: "scissors")
             } else {
                 ForEach(Array(groupedSections.enumerated()), id: \.offset) { _, section in
@@ -126,7 +126,7 @@ private struct GroomingRow: View {
                 // Descripción principal: servicios, o notes, o genérico
                 Text(!servicesText.isEmpty
                      ? servicesText
-                     : (groom.notes?.isEmpty == false ? groom.notes! : "Sesión de grooming"))
+                     : (groom.notes?.isEmpty == false ? groom.notes! : "Sesión de peluquería"))
                     .fontWeight(.semibold)
                 
                 // Ubicación, si existe
@@ -157,7 +157,7 @@ private struct GroomingRow: View {
 
 // MARK: - Previews
 
-#Preview("Grooming – Con datos") {
+#Preview("Peluquería – Con datos") {
     let container = GroomingPreviewData.makeContainer()
     let pet = GroomingPreviewData.seedGroomings(in: container)
     return PetGroomingTabPreviewHost(pet: pet)
@@ -165,7 +165,7 @@ private struct GroomingRow: View {
         .environment(\.locale, Locale(identifier: "es"))
 }
 
-#Preview("Grooming – Vacío") {
+#Preview("Peluquería – Vacío") {
     let container = GroomingPreviewData.makeContainer()
     let pet = GroomingPreviewData.emptyPet(in: container)
     return PetGroomingTabPreviewHost(pet: pet)

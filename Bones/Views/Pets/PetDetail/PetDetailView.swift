@@ -365,7 +365,7 @@ enum DetailTab: CaseIterable {
         switch self {
         case .upcoming:     return "Próximos"
         case .health:       return "Salud"
-        case .grooming:     return "Grooming"
+        case .grooming:     return "Peluquería"
         case .weight:       return "Peso"
         }
     }
@@ -527,4 +527,3 @@ private func ageString(for birth: Date?) -> String? {
     return PetDetailView(pet: samplePet)
         .modelContainer(container)
 }
-

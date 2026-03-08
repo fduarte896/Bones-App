@@ -11,7 +11,7 @@ import UIKit
 enum EventKind: String, CaseIterable, Identifiable {
     case medication  = "Medicamento"
     case vaccine     = "Vacuna"
-    case grooming    = "Grooming"
+    case grooming    = "Peluquería"
     case weight      = "Peso"
     
     var id: String { rawValue }
@@ -733,7 +733,7 @@ extension EventQuickAddSheet {
                     return notes ?? pet.name
                 }
             }()
-            notify(id: g.id, title: "Grooming",
+            notify(id: g.id, title: "Peluquería",
                    body: "\(pet.name) – \(bodyText)", at: date)
             return g
         case .weight:

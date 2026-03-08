@@ -22,6 +22,9 @@ struct EventsListView: View {
     @State private var showNoPetsAlert = false
     @State private var showingAddPet = false
 
+    @AppStorage("eventsDeepLinkPetID") private var eventsDeepLinkPetID: String = ""
+    @AppStorage("eventsDeepLinkPetName") private var eventsDeepLinkPetName: String = ""
+
     // 4. Estados para borrado con confirmación (a nivel padre)
     @State private var pendingDeleteEvent: (any BasicEvent)?
     @State private var pendingFutureCount: Int = 0
@@ -98,6 +101,12 @@ struct EventsListView: View {
         .onReceive(NotificationCenter.default.publisher(for: .eventsDidChange)) { _ in
             vm.fetchAllEvents()
         }
+        .onAppear {
+            applyDeepLinkPetFilterIfNeeded()
+        }
+        .onChange(of: eventsDeepLinkPetID) { _ in
+            applyDeepLinkPetFilterIfNeeded()
+        }
         // Hoja: elegir mascota si el filtro está en “Todas” y hay varias
         .sheet(isPresented: $showingPetChooser) {
             PetChooserSheet(pets: vm.allPets) { chosen in
@@ -149,6 +158,20 @@ struct EventsListView: View {
         }
     }
     
+    private func applyDeepLinkPetFilterIfNeeded() {
+        guard !eventsDeepLinkPetID.isEmpty else { return }
+        defer {
+            eventsDeepLinkPetID = ""
+            eventsDeepLinkPetName = ""
+        }
+        guard let uuid = UUID(uuidString: eventsDeepLinkPetID) else { return }
+        if let pet = vm.allPets.first(where: { $0.id == uuid }) {
+            vm.petFilter = PetFilter(id: pet.id, name: pet.name)
+        } else if !eventsDeepLinkPetName.isEmpty {
+            vm.petFilter = PetFilter(id: uuid, name: eventsDeepLinkPetName)
+        }
+    }
+
     // MARK: - Lógica de arranque de Quick Add
     private func startQuickAdd() {
         // 1) ¿Hay una mascota filtrada?
@@ -398,7 +421,7 @@ private struct EventRow: View {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 80, height: 80)
+                    .frame(width: 64, height: 64)
                     .clipShape(Circle())
             } else {
                 Circle()
@@ -416,6 +439,9 @@ private struct EventRow: View {
                 HStack(spacing: 6) {
                     Text(parsed.base)
                         .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
                     if isOverdue {
                         TagChip(text: "Vencida", tint: .red)
                     }
@@ -437,10 +463,13 @@ private struct EventRow: View {
             Spacer()
             if isTodayOrTomorrow {
                 Text(event.date, format: .dateTime.hour().minute())
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 56, alignment: .trailing)
             }
         }
     }

@@ -32,7 +32,7 @@ extension BasicEvent {
             if !g.services.isEmpty {
                 return g.services.map { $0.displayName }.joined(separator: ", ")
             } else {
-                return (g.notes?.isEmpty == false ? g.notes! : "Cita de grooming")
+                return (g.notes?.isEmpty == false ? g.notes! : "Cita de peluquería")
             }
         case let w   as WeightEntry:  return String(format: "Peso: %.1f kg", w.weightKg)
         default:                      return title
@@ -44,7 +44,7 @@ extension BasicEvent {
         case is Medication:   return "Medicamento"
         case is Vaccine:      return "Vacuna"
         case is Deworming:    return "Desparasitación"
-        case is Grooming:     return "Grooming"
+        case is Grooming:     return "Peluquería"
         case is WeightEntry:  return "Registro de peso"
         default:              return ""
         }
@@ -58,7 +58,7 @@ extension BasicEvent {
 class Medication: BasicEvent {
     @Attribute(.unique) var id: UUID = UUID()
     var date: Date
-    var title: String = "Medication"
+    var title: String = "Medicamento"
     var notes: String?
     var isCompleted: Bool = false
     var isRecurring: Bool = false
@@ -97,7 +97,7 @@ class Medication: BasicEvent {
 class Vaccine: BasicEvent {
     @Attribute(.unique) var id: UUID = UUID()
     var date: Date
-    var title: String = "Vaccine"
+    var title: String = "Vacuna"
     var notes: String?
     var isCompleted: Bool = false
     var isRecurring: Bool = false
@@ -133,7 +133,7 @@ class Vaccine: BasicEvent {
 class Deworming: BasicEvent {
     @Attribute(.unique) var id: UUID = UUID()
     var date: Date
-    var title: String = "Deworming"
+    var title: String = "Desparasitación"
     var notes: String?
     var isCompleted: Bool = false
     var isRecurring: Bool = false
@@ -191,7 +191,7 @@ enum GroomingService: String, Codable, CaseIterable, Identifiable {
 class Grooming: BasicEvent {
     @Attribute(.unique) var id: UUID = UUID()
     var date: Date
-    var title: String = "Grooming"
+    var title: String = "Peluquería"
     var notes: String?
     var isCompleted: Bool = false
     var isRecurring: Bool = false
@@ -239,7 +239,7 @@ class Grooming: BasicEvent {
 class WeightEntry: BasicEvent {
     @Attribute(.unique) var id: UUID = UUID()
     var date: Date
-    var title: String = "Weight"
+    var title: String = "Peso"
     var notes: String?
     var isCompleted: Bool = true   // peso se registra y queda “completado”
     var isRecurring: Bool = false

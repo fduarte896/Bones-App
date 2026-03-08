@@ -1233,7 +1233,7 @@ private enum EventDetailPreviewData {
     .modelContainer(container)
 }
 
-#Preview("Detalle – Grooming") {
+#Preview("Detalle – Peluquería") {
     let container = EventDetailPreviewData.makeContainer()
     let ctx = ModelContext(container)
     

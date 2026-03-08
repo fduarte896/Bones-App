@@ -13,7 +13,7 @@ enum EventTypeFilter: String, CaseIterable, Identifiable {
     case all        = "Todos"
     case medication = "Medicamentos"
     case vaccine    = "Vacunas"
-    case grooming   = "Grooming"
+    case grooming   = "Peluquería"
     case weight     = "Peso"
     
     var id: String { rawValue }

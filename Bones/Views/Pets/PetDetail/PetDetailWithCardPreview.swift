@@ -15,7 +15,7 @@ struct PetDetailWithCardPreview: View {
             switch self {
             case .upcoming:   return "Próximos"
             case .health:     return "Salud"
-            case .grooming:   return "Grooming"
+            case .grooming:   return "Peluquería"
             case .weight:     return "Peso"
             case .vaccineCard: return "Carnet vacunas"
             }
@@ -92,7 +92,7 @@ struct PetDetailWithCardPreview: View {
                 case .health:
                     ContentUnavailableView("Demo Salud", systemImage: "cross.case")
                 case .grooming:
-                    ContentUnavailableView("Demo Grooming", systemImage: "scissors")
+                    ContentUnavailableView("Demo Peluquería", systemImage: "scissors")
                 case .weight:
                     ContentUnavailableView("Demo Peso", systemImage: "scalemass")
                 case .vaccineCard:

@@ -109,7 +109,9 @@ struct PetsListView: View {
                                 PetDetailedCardView(
                                     pet: pet,
                                     nextEventDate: nextEvent(for: pet),
-                                    lastWeight: lastWeight(for: pet)
+                                    lastWeight: lastWeight(for: pet),
+                                    lastVaccine: lastVaccine(for: pet),
+                                    lastDeworming: lastDeworming(for: pet)
                                 )
                             }
                             .contextMenu {
@@ -231,6 +233,18 @@ struct PetsListView: View {
     private func lastWeight(for pet: Pet) -> WeightEntry? {
         let items = (try? context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
         return items.first { $0.pet?.id == pet.id }
+    }
+
+    private func lastVaccine(for pet: Pet) -> Vaccine? {
+        let now = Date()
+        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && $0.date <= now }
+    }
+
+    private func lastDeworming(for pet: Pet) -> Deworming? {
+        let now = Date()
+        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && $0.date <= now }
     }
 }
 
@@ -379,7 +393,7 @@ private struct SinglePetDashboardView: View {
         return InfoCard(
             icon: "pills.fill",
             title: "Próximo medicamento",
-            primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
+            primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
             secondary: next?.name
         )
         .contextMenu {
@@ -395,7 +409,7 @@ private struct SinglePetDashboardView: View {
         return InfoCard(
             icon: "syringe",
             title: "Próxima vacuna",
-            primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
+            primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
             secondary: next?.vaccineName
         )
         .contextMenu {
@@ -411,8 +425,8 @@ private struct SinglePetDashboardView: View {
         return InfoCard(
             icon: "syringe",
             title: "Última \nvacuna",
-            primary: last?.date.formatted(date: .abbreviated, time: .omitted) ?? "Nunca",
-            secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
+            primary: last.map { formatDate($0.date) } ?? "Nunca",
+            secondary: last.map { DoseSeries.splitDoseBase(from: $0.vaccineName) }
         )
         .contextMenu {
             Button("Añadir vacuna", systemImage: "plus") {
@@ -427,7 +441,7 @@ private struct SinglePetDashboardView: View {
         return InfoCard(
             icon: "ladybug.fill",
             title: "Próxima desparasitación",
-            primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
+            primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
             secondary: next?.notes
         )
         .contextMenu {
@@ -444,7 +458,7 @@ private struct SinglePetDashboardView: View {
         return InfoCard(
             icon: "ladybug.fill",
             title: "Última desparasitación",
-            primary: last?.date.formatted(date: .abbreviated, time: .omitted) ?? "Nunca",
+            primary: last.map { formatDateTime($0.date) } ?? "Nunca",
             secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
         )
     }
@@ -455,7 +469,7 @@ private struct SinglePetDashboardView: View {
             icon: "scalemass",
             title: "Peso \nactual",
             primary: last.map { String(format: "%.1f kg", $0.weightKg) } ?? "—",
-            secondary: last.map { $0.date.formatted(date: .abbreviated, time: .omitted) }
+            secondary: last.map { formatDate($0.date) }
         )
         .contextMenu {
             Button("Añadir peso", systemImage: "plus") {
@@ -703,7 +717,7 @@ private struct PetCarouselCard: View {
             icon: "syringe",
             title: "Última \nvacuna",
             primary: last?.date.formatted(date: .abbreviated, time: .omitted) ?? "Nunca",
-            secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
+            secondary: last.map { DoseSeries.splitDoseBase(from: $0.vaccineName) }
         )
         .contextMenu {
             Button("Añadir vacuna", systemImage: "plus") {
@@ -734,7 +748,7 @@ private struct PetCarouselCard: View {
         return InfoCard(
             icon: "ladybug.fill",
             title: "Última desparasitación",
-            primary: last?.date.formatted(date: .abbreviated, time: .omitted) ?? "Nunca",
+            primary: last?.date.formatted(date: .abbreviated, time: .shortened) ?? "Nunca",
             secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
         )
     }
@@ -823,6 +837,8 @@ private struct PetDetailedCardView: View {
     let pet: Pet
     let nextEventDate: Date?
     let lastWeight: WeightEntry?
+    let lastVaccine: Vaccine?
+    let lastDeworming: Deworming?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -867,7 +883,7 @@ private struct PetDetailedCardView: View {
             HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .foregroundStyle(.secondary)
-                Text(nextEventDate?.formatted(date: .abbreviated, time: .shortened) ?? "Sin eventos próximos")
+                Text(nextEventDate.map { formatDateTime($0) } ?? "Sin eventos próximos")
             }
             .font(.caption)
             .lineLimit(1)
@@ -879,13 +895,37 @@ private struct PetDetailedCardView: View {
                 if let w = lastWeight {
                     Text(String(format: "%.1f kg", w.weightKg))
                     Spacer()
-                    Text(w.date, format: .dateTime.day().month().year())
+                    Text(formatDate(w.date))
                         .foregroundStyle(.secondary)
                 } else {
                     Text("—")
                 }
             }
             .font(.caption)
+
+            // Última vacuna
+            if let lastVaccine {
+                HStack(spacing: 8) {
+                    Image(systemName: "syringe")
+                        .foregroundStyle(.secondary)
+                    Text(DoseSeries.splitDoseBase(from: lastVaccine.vaccineName))
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+
+            // Última desparasitación
+            if let lastDeworming {
+                HStack(spacing: 8) {
+                    Image(systemName: "ladybug.fill")
+                        .foregroundStyle(.secondary)
+                    Text(formatDateTime(lastDeworming.date))
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -963,6 +1003,30 @@ private let esRelativeFormatter: RelativeDateTimeFormatter = {
     f.unitsStyle = .full
     return f
 }()
+
+private let esDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "es")
+    f.dateStyle = .medium
+    f.timeStyle = .none
+    return f
+}()
+
+private let esDateTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "es")
+    f.dateStyle = .medium
+    f.timeStyle = .short
+    return f
+}()
+
+private func formatDate(_ date: Date) -> String {
+    esDateFormatter.string(from: date)
+}
+
+private func formatDateTime(_ date: Date) -> String {
+    esDateTimeFormatter.string(from: date)
+}
 
 // MARK: - Previews
 
