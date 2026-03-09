@@ -13,6 +13,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @AppStorage("eventsDeepLinkPetID") private var eventsDeepLinkPetID: String = ""
     @AppStorage("eventsDeepLinkPetName") private var eventsDeepLinkPetName: String = ""
+    @AppStorage("eventsDeepLinkAction") private var eventsDeepLinkAction: String = ""
 
     enum Tab { case pets, events, settings }
 
@@ -41,10 +42,16 @@ struct ContentView: View {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let petID = components?.queryItems?.first(where: { $0.name == "petId" })?.value
         let petName = components?.queryItems?.first(where: { $0.name == "petName" })?.value
+        let action = components?.queryItems?.first(where: { $0.name == "action" })?.value
 
         if let petID {
             eventsDeepLinkPetID = petID
             eventsDeepLinkPetName = petName ?? ""
+        }
+        if let action {
+            eventsDeepLinkAction = action
+        }
+        if petID != nil || action != nil {
             selection = .events
         }
     }

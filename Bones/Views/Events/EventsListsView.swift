@@ -24,6 +24,7 @@ struct EventsListView: View {
 
     @AppStorage("eventsDeepLinkPetID") private var eventsDeepLinkPetID: String = ""
     @AppStorage("eventsDeepLinkPetName") private var eventsDeepLinkPetName: String = ""
+    @AppStorage("eventsDeepLinkAction") private var eventsDeepLinkAction: String = ""
 
     // 4. Estados para borrado con confirmación (a nivel padre)
     @State private var pendingDeleteEvent: (any BasicEvent)?
@@ -103,9 +104,13 @@ struct EventsListView: View {
         }
         .onAppear {
             applyDeepLinkPetFilterIfNeeded()
+            applyDeepLinkActionIfNeeded()
         }
         .onChange(of: eventsDeepLinkPetID) { _ in
             applyDeepLinkPetFilterIfNeeded()
+        }
+        .onChange(of: eventsDeepLinkAction) { _ in
+            applyDeepLinkActionIfNeeded()
         }
         // Hoja: elegir mascota si el filtro está en “Todas” y hay varias
         .sheet(isPresented: $showingPetChooser) {
@@ -160,15 +165,33 @@ struct EventsListView: View {
     
     private func applyDeepLinkPetFilterIfNeeded() {
         guard !eventsDeepLinkPetID.isEmpty else { return }
-        defer {
-            eventsDeepLinkPetID = ""
-            eventsDeepLinkPetName = ""
+        let shouldClear = eventsDeepLinkAction != "add"
+        if shouldClear {
+            defer {
+                eventsDeepLinkPetID = ""
+                eventsDeepLinkPetName = ""
+            }
         }
         guard let uuid = UUID(uuidString: eventsDeepLinkPetID) else { return }
         if let pet = vm.allPets.first(where: { $0.id == uuid }) {
             vm.petFilter = PetFilter(id: pet.id, name: pet.name)
         } else if !eventsDeepLinkPetName.isEmpty {
             vm.petFilter = PetFilter(id: uuid, name: eventsDeepLinkPetName)
+        }
+    }
+
+    private func applyDeepLinkActionIfNeeded() {
+        guard eventsDeepLinkAction == "add" else { return }
+        defer {
+            eventsDeepLinkAction = ""
+            eventsDeepLinkPetID = ""
+            eventsDeepLinkPetName = ""
+        }
+        if let uuid = UUID(uuidString: eventsDeepLinkPetID),
+           let pet = vm.allPets.first(where: { $0.id == uuid }) {
+            petForQuickAdd = pet
+        } else {
+            startQuickAdd()
         }
     }
 
