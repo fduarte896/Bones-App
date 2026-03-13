@@ -8,12 +8,34 @@
 import WidgetKit
 import AppIntents
 
+enum EventTypeIntent: String, AppEnum {
+    case all
+    case medication
+    case vaccine
+    case deworming
+    case grooming
+    case weight
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Tipo de evento"
+    static var caseDisplayRepresentations: [EventTypeIntent: DisplayRepresentation] = [
+        .all: "Todos",
+        .medication: "Medicamentos",
+        .vaccine: "Vacunas",
+        .deworming: "Desparasitación",
+        .grooming: "Peluquería",
+        .weight: "Peso"
+    ]
+}
+
 struct PetSelectionIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "Mascota"
-    static var description = IntentDescription("Selecciona la mascota a mostrar en el widget.")
+    static var description = IntentDescription("Selecciona la mascota y el tipo de evento a mostrar.")
 
     @Parameter(title: "Mascota")
     var pet: PetEntity?
+
+    @Parameter(title: "Tipo de evento", default: .all)
+    var eventType: EventTypeIntent
 }
 
 struct PetEntity: AppEntity, Hashable, Identifiable {

@@ -12,6 +12,7 @@ struct UpcomingEventsEntry: TimelineEntry {
     let date: Date
     let pet: WidgetPetSummary?
     let events: [WidgetEventSummary]
+    let selectedType: EventTypeIntent
 }
 
 struct UpcomingEventsProvider: AppIntentTimelineProvider {
@@ -24,7 +25,8 @@ struct UpcomingEventsProvider: AppIntentTimelineProvider {
                             events: [
                                 WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(3600)),
                                 WidgetEventSummary(id: "2", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(7200))
-                            ])
+                            ],
+                            selectedType: .all)
     }
 
     func snapshot(for configuration: PetSelectionIntent, in context: Context) async -> UpcomingEventsEntry {
@@ -41,8 +43,37 @@ struct UpcomingEventsProvider: AppIntentTimelineProvider {
         let payload = WidgetStore.load()
         let selectedPetID = configuration.pet?.id ?? payload?.pets.first?.id
         let selectedPet = payload?.pets.first(where: { $0.id == selectedPetID })
-        let events = payload?.eventsByPetID[selectedPetID ?? ""] ?? []
-        return UpcomingEventsEntry(date: .now, pet: selectedPet, events: events)
+        let allEvents = payload?.eventsByPetID[selectedPetID ?? ""] ?? []
+        let events = filterEvents(allEvents, by: configuration.eventType)
+        return UpcomingEventsEntry(date: .now,
+                                   pet: selectedPet,
+                                   events: events,
+                                   selectedType: configuration.eventType)
+    }
+
+    private func filterEvents(_ events: [WidgetEventSummary], by type: EventTypeIntent) -> [WidgetEventSummary] {
+        guard type != .all else { return events }
+        return events.filter { event in
+            matches(eventType: event.type, filter: type)
+        }
+    }
+
+    private func matches(eventType: String, filter: EventTypeIntent) -> Bool {
+        let normalized = eventType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch filter {
+        case .all:
+            return true
+        case .medication:
+            return normalized.contains("medicamento")
+        case .vaccine:
+            return normalized.contains("vacuna")
+        case .deworming:
+            return normalized.contains("desparas")
+        case .grooming:
+            return normalized.contains("peluquer")
+        case .weight:
+            return normalized.contains("peso")
+        }
     }
 
     private func nextRefreshDate(from entry: UpcomingEventsEntry) -> Date {
@@ -60,6 +91,8 @@ struct BonesUpcomingEventsWidgetView: View {
     var body: some View {
         Group {
             switch family {
+            case .systemLarge:
+                largeBody
             case .systemMedium:
                 mediumBody
             default:
@@ -153,14 +186,144 @@ struct BonesUpcomingEventsWidgetView: View {
         }
     }
 
+    private var largeBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            largeHeader
+            if let featured = entry.events.first {
+                featuredCard(for: featured)
+                Divider().opacity(0.25)
+                largeList
+            } else {
+                emptyState
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var largeHeader: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(entry.pet?.name ?? "Mascota") · Próximos eventos")
+                .font(.headline)
+                .lineLimit(1)
+            Text(headerSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var largeList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Siguientes")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(entry.events.dropFirst().prefix(5), id: \.id) { event in
+                LargeEventRow(title: event.title,
+                              type: event.type,
+                              timeText: shortTime(event.date),
+                              tint: chipTint(for: event.type))
+            }
+
+            if entry.events.count <= 1 {
+                Text("Sin más eventos")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func featuredCard(for event: WidgetEventSummary) -> some View {
+        let isOverdue = isOverdue(event.date)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(chipTint(for: event.type).opacity(0.18))
+                    .frame(width: 36, height: 36)
+                    .overlay(
+                        Image(systemName: iconName(for: event.type))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(chipTint(for: event.type))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                    Text(timeLabel(for: event.date))
+                        .font(.system(size: 20, weight: .semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                if isOverdue {
+                    TagChip(text: "Vencida", tint: .red)
+                }
+            }
+
+            HStack(spacing: 6) {
+                TagChip(text: event.type, tint: chipTint(for: event.type))
+                Text(shortDate(event.date))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemGray6)))
+    }
+
     private var header: some View {
         HStack(spacing: 6) {
             Text(entry.pet?.name ?? "Mascota")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("• Próximo")
+                .lineLimit(1)
+            Text("• \(headerSuffix)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+            if let next = entry.events.first, isOverdue(next.date) {
+                TagChip(text: "Vencida", tint: .red)
+                    .scaleEffect(0.85)
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private var headerSuffix: String {
+        if entry.selectedType == .all {
+            return "Próximo"
+        }
+        return selectedTypeLabel
+    }
+
+    private var headerSummary: String {
+        let overdueCount = entry.events.filter { isOverdue($0.date) }.count
+        let todayCount = entry.events.filter { Calendar.current.isDateInToday($0.date) }.count
+        let todayLabel = todayCount > 0 ? "Hoy · \(todayCount) eventos" : "Próximos"
+        if overdueCount > 0 {
+            return "\(todayLabel) · \(overdueCount) vencidos"
+        }
+        return todayLabel
+    }
+
+    private var selectedTypeLabel: String {
+        switch entry.selectedType {
+        case .all:
+            return "Todos"
+        case .medication:
+            return "Meds"
+        case .vaccine:
+            return "Vacunas"
+        case .deworming:
+            return "Despar."
+        case .grooming:
+            return "Peluquería"
+        case .weight:
+            return "Peso"
         }
     }
 
@@ -217,6 +380,10 @@ struct BonesUpcomingEventsWidgetView: View {
         formattedTime(date)
     }
 
+    private func isOverdue(_ date: Date) -> Bool {
+        date < Date()
+    }
+
     private func formattedShortDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = .autoupdatingCurrent
@@ -253,6 +420,23 @@ struct BonesUpcomingEventsWidgetView: View {
     private func chipBackground(for type: String) -> Color {
         chipTint(for: type).opacity(0.12)
     }
+
+    private func iconName(for type: String) -> String {
+        switch type.lowercased() {
+        case "medicamento", "medicamentos":
+            return "pills.fill"
+        case "vacuna", "vacunas":
+            return "syringe"
+        case "desparasitación", "desparasitacion":
+            return "ladybug.fill"
+        case "peluquería", "peluqueria":
+            return "scissors"
+        case "registro de peso", "peso":
+            return "scalemass"
+        default:
+            return "bell"
+        }
+    }
 }
 
 private struct TagChip: View {
@@ -288,6 +472,33 @@ private struct EventTitleChip: View {
     }
 }
 
+private struct LargeEventRow: View {
+    let title: String
+    let type: String
+    let timeText: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(timeText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(width: 54, alignment: .leading)
+                .lineLimit(1)
+
+            Text(title)
+                .font(.caption)
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            TagChip(text: type, tint: tint)
+                .scaleEffect(0.9)
+        }
+    }
+}
+
 struct BonesUpcomingEventsWidget: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "BonesUpcomingEventsWidget",
@@ -297,7 +508,7 @@ struct BonesUpcomingEventsWidget: Widget {
         }
         .configurationDisplayName("Próximos de tu mascota")
         .description("Muestra los próximos eventos de una mascota.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
@@ -309,7 +520,8 @@ struct BonesUpcomingEventsWidget: Widget {
                         events: [
                             WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(3600)),
                             WidgetEventSummary(id: "2", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(7200))
-                        ])
+                        ],
+                        selectedType: .all)
 }
 
 #Preview("Small vacío", as: .systemSmall) {
@@ -317,7 +529,29 @@ struct BonesUpcomingEventsWidget: Widget {
 } timeline: {
     UpcomingEventsEntry(date: .now,
                         pet: WidgetPetSummary(id: "preview", name: "Loki"),
-                        events: [])
+                        events: [],
+                        selectedType: .all)
+}
+
+#Preview("Small Medicamentos", as: .systemSmall) {
+    BonesUpcomingEventsWidget()
+} timeline: {
+    UpcomingEventsEntry(date: .now,
+                        pet: WidgetPetSummary(id: "preview", name: "Loki"),
+                        events: [
+                            WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(3600))
+                        ],
+                        selectedType: .medication)
+    UpcomingEventsEntry(date: .now,
+                        pet: WidgetPetSummary(id: "preview", name: "Loki"),
+                        events: [],
+                        selectedType: .medication)
+    UpcomingEventsEntry(date: .now,
+                        pet: WidgetPetSummary(id: "preview", name: "Loki"),
+                        events: [
+                            WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(-7200))
+                        ],
+                        selectedType: .medication)
 }
 #Preview(as: .systemMedium) {
     BonesUpcomingEventsWidget()
@@ -328,7 +562,8 @@ struct BonesUpcomingEventsWidget: Widget {
                             WidgetEventSummary(id: "1", title: "Vacuna rabia", type: "Vacuna", date: .now.addingTimeInterval(3600)),
                             WidgetEventSummary(id: "2", title: "Baño", type: "Peluquería", date: .now.addingTimeInterval(7200)),
                             WidgetEventSummary(id: "3", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(10800))
-                        ])
+                        ],
+                        selectedType: .all)
 }
 
 #Preview("Medium vacío", as: .systemMedium) {
@@ -336,6 +571,22 @@ struct BonesUpcomingEventsWidget: Widget {
 } timeline: {
     UpcomingEventsEntry(date: .now,
                         pet: WidgetPetSummary(id: "preview", name: "Kira"),
-                        events: [])
+                        events: [],
+                        selectedType: .all)
 }
 
+#Preview("Large demo", as: .systemLarge) {
+    BonesUpcomingEventsWidget()
+} timeline: {
+    UpcomingEventsEntry(date: .now,
+                        pet: WidgetPetSummary(id: "preview", name: "Loki"),
+                        events: [
+                            WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(-3600)),
+                            WidgetEventSummary(id: "2", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(7200)),
+                            WidgetEventSummary(id: "3", title: "Baño y corte", type: "Peluquería", date: .now.addingTimeInterval(10800)),
+                            WidgetEventSummary(id: "4", title: "Vacuna rabia", type: "Vacuna", date: .now.addingTimeInterval(86400)),
+                            WidgetEventSummary(id: "5", title: "Control de peso", type: "Registro de peso", date: .now.addingTimeInterval(172800)),
+                            WidgetEventSummary(id: "6", title: "Moquillo (dosis 2/3)", type: "Vacuna", date: .now.addingTimeInterval(259200))
+                        ],
+                        selectedType: .all)
+}
