@@ -173,10 +173,14 @@ struct PetDetailView: View {
         .onChange(of: selectedItem) { _, item in
             guard let item else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    pet.photoData = data
-                    try? context.save()
-                    selectedItem = nil           // ← resetea para permitir nueva selección
+                do {
+                    if let data = try await item.loadTransferable(type: Data.self) {
+                        pet.photoData = data
+                        try? context.save()
+                        selectedItem = nil           // ← resetea para permitir nueva selección
+                    }
+                } catch {
+                    print("Photo load failed: \(error)")
                 }
             }
         }

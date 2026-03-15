@@ -51,8 +51,12 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             trigger: trigger
         )
         
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error { print("⚠️ Notification error:", error) }
+        Task {
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                print("⚠️ Notification error:", error)
+            }
         }
     }
     

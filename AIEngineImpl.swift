@@ -12,13 +12,13 @@ import Foundation
 actor AIEngine {
     static let shared = AIEngine()
     
-    struct Config {
+    struct Config: Sendable {
         // Permite forzar el uso de heurística aunque haya FM (útil para pruebas A/B)
-        static var preferFoundationModels: Bool = true
+        static let preferFoundationModels: Bool = true
         // Activa logs de diagnóstico
-        static var loggingEnabled: Bool = true
+        static let loggingEnabled: Bool = true
         // Habilita/deshabilita TODAS las funciones de IA para builds específicas (p. ej. TestFlight)
-        static var aiFeaturesEnabled: Bool = {
+        static let aiFeaturesEnabled: Bool = {
             #if TESTFLIGHT
             return false
             #else

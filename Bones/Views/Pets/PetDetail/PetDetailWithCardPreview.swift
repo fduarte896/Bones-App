@@ -388,11 +388,13 @@ struct StickerPicker: View {
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
                 Task {
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let img = UIImage(data: data) {
-                        await MainActor.run {
+                    do {
+                        if let data = try await item.loadTransferable(type: Data.self),
+                           let img = UIImage(data: data) {
                             tempImage = img
                         }
+                    } catch {
+                        print("Photo load failed: \(error)")
                     }
                 }
             }

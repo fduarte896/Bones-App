@@ -983,11 +983,13 @@ private struct PrescriptionSection: View {
         .onChange(of: photoItem) { _, newItem in
             guard let item = newItem else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    await MainActor.run {
+                do {
+                    if let data = try await item.loadTransferable(type: Data.self) {
                         self.imageData = data
                         self.onChange()
                     }
+                } catch {
+                    print("Photo load failed: \(error)")
                 }
             }
         }

@@ -90,8 +90,12 @@ struct AddPetSheet: View {
             .onChange(of: selectedItem) { _, item in
                 guard let item else { return }
                 Task {
-                    if let data = try? await item.loadTransferable(type: Data.self) {
-                        photoData = data
+                    do {
+                        if let data = try await item.loadTransferable(type: Data.self) {
+                            photoData = data
+                        }
+                    } catch {
+                        print("Photo load failed: \(error)")
                     }
                 }
             }
