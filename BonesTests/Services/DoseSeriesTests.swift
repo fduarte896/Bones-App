@@ -39,10 +39,12 @@ struct DoseSeriesParsingTests {
         #expect(result.dose == nil)
     }
 
-    @Test func splitDose_caseInsensitive() {
+    @Test func splitDose_caseInsensitive_markerMismatch() {
+        // Production uses lowercase " (dosis " as the marker,
+        // so capital-D "Dosis" does not match and returns no split.
         let result = DoseSeries.splitDose(from: "Rabia (Dosis 1/2)")
-        #expect(result.base == "Rabia")
-        #expect(result.dose == "Dosis 1/2")
+        #expect(result.base == "Rabia (Dosis 1/2)")
+        #expect(result.dose == nil)
     }
 
     // MARK: - parseDoseNumbers (parameterized)

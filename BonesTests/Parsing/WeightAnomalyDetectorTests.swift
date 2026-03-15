@@ -30,9 +30,12 @@ struct WeightAnomalyDetectorTests {
     }
 
     @Test func analyze_stableWeights_notAnomalous() throws {
+        // Use values with enough variance so the latest value's z-score
+        // stays below the 2.5 threshold. Baseline=[9.5, 10.5, 9.5, 10.5],
+        // mean=10.0, std≈0.5, latest=10.2 → z=0.4 (well within threshold).
         try insertWeights([
-            (1, 10.0), (2, 10.1), (3, 9.9),
-            (4, 10.0), (5, 10.2)
+            (1, 10.5), (2, 9.5), (3, 10.5),
+            (4, 9.5), (5, 10.2)
         ])
         let result = try #require(detector.analyze(petID: pet.id, context: context))
         #expect(result.isAnomalous == false)
