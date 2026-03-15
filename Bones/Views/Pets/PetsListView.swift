@@ -13,9 +13,13 @@ import UIKit             // para UIImage en previews
 struct PetsListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Pet.name) private var pets: [Pet]   // alfabético
+    @AppStorage("didChooseDemoPet") private var didChooseDemoPet: Bool = false
+    @AppStorage("demoGuideStep") private var demoGuideStep: Int = 0
+    @AppStorage("didCompleteDemoGuide") private var didCompleteDemoGuide: Bool = false
     
     @State private var isPresentingAdd = false
     @State private var petToEdit: Pet?   // nuevo state
+    @State private var navigateToPetDetail: Pet?
     
     // 2 columnas en iPhone, 3-4 en iPad/landscape (modo compacto)
     private let columns = [ GridItem(.adaptive(minimum: 150), spacing: 16) ]
@@ -52,13 +56,23 @@ struct PetsListView: View {
             }
             else if pets.count == 1, let pet = pets.first {
                 // Dashboard para una sola mascota
-                SinglePetDashboardView(pet: pet)
+                SinglePetDashboardView(
+                    pet: pet,
+                    demoGuideStep: $demoGuideStep,
+                    didCompleteDemoGuide: $didCompleteDemoGuide
+                )
                     .navigationTitle("Resumen")
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
-                            Button { isPresentingAdd = true } label: {
+                            Button {
+                                if demoGuideStep == DemoGuideStep.addPet.rawValue {
+                                    demoGuideStep = DemoGuideStep.detail.rawValue
+                                }
+                                isPresentingAdd = true
+                            } label: {
                                 Image(systemName: "plus")
                             }
+                            .demoGuideAnchor(.addPetButton)
                         }
                     }
                     .sheet(isPresented: $isPresentingAdd) {
@@ -190,6 +204,76 @@ struct PetsListView: View {
                 }
             }
         }
+        .navigationDestination(item: $navigateToPetDetail) { pet in
+            PetDetailView(pet: pet)
+        }
+        .overlayPreferenceValue(DemoGuideAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                if shouldShowDemoGuide,
+                   let step = DemoGuideStep(rawValue: demoGuideStep) {
+                    switch step {
+                    case .summary:
+                        if let anchor = anchors[.dashboardHeader] {
+                            DemoGuideOverlay(
+                                targetRect: proxy[anchor],
+                                title: "Resumen de Marcos",
+                                message: "Aquí ves lo esencial de su salud y próximos cuidados.",
+                                primaryActionTitle: "Siguiente",
+                                onPrimaryAction: { demoGuideStep = DemoGuideStep.addPet.rawValue },
+                                onSkip: skipDemoGuide,
+                                presentationStyle: .centered
+                            )
+                        }
+                    case .addPet:
+                        if let anchor = anchors[.addPetButton] {
+                            DemoGuideOverlay(
+                                targetRect: proxy[anchor],
+                                title: "Añade otra mascota",
+                                message: "Usa este + para crear un nuevo perfil.",
+                                primaryActionTitle: "Siguiente",
+                                onPrimaryAction: {
+                                    demoGuideStep = DemoGuideStep.upcoming.rawValue
+                                    openDetailIfPossible()
+                                },
+                                onSkip: skipDemoGuide,
+                                presentationStyle: .centered
+                            )
+                        }
+                    case .detail:
+                        if let anchor = anchors[.detailButton] {
+                            DemoGuideOverlay(
+                                targetRect: proxy[anchor],
+                                title: "Ver detalle",
+                                message: "Entra al perfil completo para ver pestañas y eventos.",
+                                primaryActionTitle: "Siguiente",
+                                onPrimaryAction: {
+                                    demoGuideStep = DemoGuideStep.upcoming.rawValue
+                                    openDetailIfPossible()
+                                },
+                                onSkip: skipDemoGuide,
+                                presentationStyle: .centered
+                            )
+                        }
+                    default:
+                        EmptyView()
+                    }
+                }
+            }
+        }
+    }
+
+    private var shouldShowDemoGuide: Bool {
+        didChooseDemoPet && !didCompleteDemoGuide && demoGuideStep <= DemoGuideStep.detail.rawValue
+    }
+
+    private func skipDemoGuide() {
+        didCompleteDemoGuide = true
+    }
+
+    private func openDetailIfPossible() {
+        if let pet = pets.first {
+            navigateToPetDetail = pet
+        }
     }
     
     // --- helpers para tarjetas ---
@@ -253,6 +337,8 @@ struct PetsListView: View {
 private struct SinglePetDashboardView: View {
     @Environment(\.modelContext) private var context
     let pet: Pet
+    @Binding var demoGuideStep: Int
+    @Binding var didCompleteDemoGuide: Bool
     
     @State private var showingQuickAdd = false
     @State private var quickAddKind: EventKind = .medication
@@ -308,6 +394,7 @@ private struct SinglePetDashboardView: View {
                 .padding(.top, 8)
             }
             .padding(.vertical, 12)
+            .demoGuideAnchor(.dashboardHeader)
         }
         .sheet(isPresented: $showingQuickAdd) {
             EventQuickAddSheet(pet: pet, initialKind: quickAddKind)
@@ -378,6 +465,12 @@ private struct SinglePetDashboardView: View {
                         Label("Ver detalle", systemImage: "chevron.right.circle")
                     }
                     .buttonStyle(.bordered)
+                    .demoGuideAnchor(.detailButton)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        if demoGuideStep == DemoGuideStep.detail.rawValue {
+                            demoGuideStep = DemoGuideStep.upcoming.rawValue
+                        }
+                    })
                 }
                 .padding(.top, 4)
             }
@@ -1151,6 +1244,66 @@ private enum PetsListPreviewData {
 #Preview("Lista – 1 mascota") {
     let container = PetsListPreviewData.makeContainer()
     _ = PetsListPreviewData.seedPets(count: 1, in: container, withEvents: true)
+    return PetsListView()
+        .modelContainer(container)
+        .environment(\.locale, Locale(identifier: "es"))
+}
+
+#Preview("Demo Guide – Resumen") {
+    let container = PetsListPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    let pet = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
+    if let img = UIImage(named: "MarcosPhoto"), let data = img.jpegData(compressionQuality: 0.9) {
+        pet.photoData = data
+    }
+    ctx.insert(pet)
+    try? ctx.save()
+
+    let defaults = UserDefaults.standard
+    defaults.set(true, forKey: "didChooseDemoPet")
+    defaults.set(false, forKey: "didCompleteDemoGuide")
+    defaults.set(DemoGuideStep.summary.rawValue, forKey: "demoGuideStep")
+
+    return PetsListView()
+        .modelContainer(container)
+        .environment(\.locale, Locale(identifier: "es"))
+}
+
+#Preview("Demo Guide – + Mascota") {
+    let container = PetsListPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    let pet = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
+    if let img = UIImage(named: "MarcosPhoto"), let data = img.jpegData(compressionQuality: 0.9) {
+        pet.photoData = data
+    }
+    ctx.insert(pet)
+    try? ctx.save()
+
+    let defaults = UserDefaults.standard
+    defaults.set(true, forKey: "didChooseDemoPet")
+    defaults.set(false, forKey: "didCompleteDemoGuide")
+    defaults.set(DemoGuideStep.addPet.rawValue, forKey: "demoGuideStep")
+
+    return PetsListView()
+        .modelContainer(container)
+        .environment(\.locale, Locale(identifier: "es"))
+}
+
+#Preview("Demo Guide – Ver Detalle") {
+    let container = PetsListPreviewData.makeContainer()
+    let ctx = ModelContext(container)
+    let pet = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
+    if let img = UIImage(named: "MarcosPhoto"), let data = img.jpegData(compressionQuality: 0.9) {
+        pet.photoData = data
+    }
+    ctx.insert(pet)
+    try? ctx.save()
+
+    let defaults = UserDefaults.standard
+    defaults.set(true, forKey: "didChooseDemoPet")
+    defaults.set(false, forKey: "didCompleteDemoGuide")
+    defaults.set(DemoGuideStep.detail.rawValue, forKey: "demoGuideStep")
+
     return PetsListView()
         .modelContainer(container)
         .environment(\.locale, Locale(identifier: "es"))

@@ -36,6 +36,9 @@ struct PetDetailView: View {
     @State private var healthSegment: PetHealthTab.HealthSegment = .vaccines
 
     @AppStorage("didSeedDewormingDemo") private var didSeedDewormingDemo: Bool = false
+    @AppStorage("didChooseDemoPet") private var didChooseDemoPet: Bool = false
+    @AppStorage("demoGuideStep") private var demoGuideStep: Int = 0
+    @AppStorage("didCompleteDemoGuide") private var didCompleteDemoGuide: Bool = false
 
     // Inicializador para inyectar el ViewModel
     init(pet: Pet) {
@@ -145,6 +148,7 @@ struct PetDetailView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .demoGuideAnchor(guideAnchor(for: tab))
                 }
             }
             .padding(.horizontal)
@@ -174,6 +178,31 @@ struct PetDetailView: View {
                     try? context.save()
                     selectedItem = nil           // ← resetea para permitir nueva selección
                 }
+            }
+        }
+        .onAppear {
+            if shouldShowDemoGuideInDetail,
+               demoGuideStep == DemoGuideStep.detail.rawValue {
+                demoGuideStep = DemoGuideStep.upcoming.rawValue
+            }
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            guard shouldShowDemoGuideInDetail else { return }
+            switch newTab {
+            case .health:
+                if demoGuideStep == DemoGuideStep.upcoming.rawValue {
+                    demoGuideStep = DemoGuideStep.health.rawValue
+                }
+            case .grooming:
+                if demoGuideStep == DemoGuideStep.health.rawValue {
+                    demoGuideStep = DemoGuideStep.grooming.rawValue
+                }
+            case .weight:
+                if demoGuideStep == DemoGuideStep.grooming.rawValue {
+                    demoGuideStep = DemoGuideStep.weight.rawValue
+                }
+            case .upcoming:
+                break
             }
         }
 
@@ -249,6 +278,96 @@ struct PetDetailView: View {
         .onChange(of: healthSegment) { old, new in
             print("[QuickAdd] healthSegment \(old) → \(new)")
         }
+        .overlayPreferenceValue(DemoGuideAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                if shouldShowDemoGuideInDetail,
+                   let step = DemoGuideStep(rawValue: demoGuideStep) {
+                    switch step {
+                    case .upcoming:
+                        if let anchor = anchors[.tabUpcoming] {
+                            DemoGuideOverlay(
+                                targetRect: proxy[anchor],
+                                title: "Próximos",
+                                message: "Aquí aparecen eventos cercanos y vencidos.",
+                                primaryActionTitle: "Siguiente",
+                                onPrimaryAction: {
+                                    selectedTab = .health
+                                    demoGuideStep = DemoGuideStep.health.rawValue
+                                },
+                                onSkip: skipDemoGuide,
+                                presentationStyle: .centered
+                            )
+                        }
+                    case .health:
+                        if let anchor = anchors[.tabHealth] {
+                            DemoGuideOverlay(
+                                targetRect: proxy[anchor],
+                                title: "Salud",
+                                message: "Vacunas y medicamentos organizados en un solo lugar.",
+                                primaryActionTitle: "Siguiente",
+                                onPrimaryAction: {
+                                    selectedTab = .grooming
+                                    demoGuideStep = DemoGuideStep.grooming.rawValue
+                                },
+                                onSkip: skipDemoGuide,
+                                presentationStyle: .centered
+                            )
+                        }
+                    case .grooming:
+                        if let anchor = anchors[.tabGrooming] {
+                            DemoGuideOverlay(
+                                targetRect: proxy[anchor],
+                                title: "Peluquería",
+                                message: "Registra grooming y próximos cuidados.",
+                                primaryActionTitle: "Siguiente",
+                                onPrimaryAction: {
+                                    selectedTab = .weight
+                                    demoGuideStep = DemoGuideStep.weight.rawValue
+                                },
+                                onSkip: skipDemoGuide,
+                                presentationStyle: .centered
+                            )
+                        }
+                    case .weight:
+                        if let anchor = anchors[.tabWeight] {
+                            DemoGuideOverlay(
+                                targetRect: proxy[anchor],
+                                title: "Peso",
+                                message: "Historial y evolución del peso de tu mascota.",
+                                primaryActionTitle: "Finalizar",
+                                onPrimaryAction: finishDemoGuide,
+                                onSkip: skipDemoGuide,
+                                presentationStyle: .centered
+                            )
+                        }
+                    default:
+                        EmptyView()
+                    }
+                }
+            }
+        }
+    }
+
+    private var shouldShowDemoGuideInDetail: Bool {
+        didChooseDemoPet && !didCompleteDemoGuide && demoGuideStep >= DemoGuideStep.upcoming.rawValue
+    }
+
+    private func guideAnchor(for tab: DetailTab) -> DemoGuideAnchor {
+        switch tab {
+        case .upcoming: return .tabUpcoming
+        case .health: return .tabHealth
+        case .grooming: return .tabGrooming
+        case .weight: return .tabWeight
+        }
+    }
+
+    private func skipDemoGuide() {
+        didCompleteDemoGuide = true
+    }
+
+    private func finishDemoGuide() {
+        didCompleteDemoGuide = true
+        demoGuideStep = DemoGuideStep.done.rawValue
     }
     
     // QuickAdd: modelo identificable para .sheet(item:)
@@ -526,4 +645,84 @@ private func ageString(for birth: Date?) -> String? {
     // 4) Render
     return PetDetailView(pet: samplePet)
         .modelContainer(container)
+}
+
+// MARK: - Demo Guide Previews
+
+private enum PetDetailDemoGuidePreviewData {
+    static func makeContainerAndPet() -> (ModelContainer, Pet) {
+        let schema = Schema([
+            Pet.self,
+            Medication.self,
+            Vaccine.self,
+            Deworming.self,
+            Grooming.self,
+            WeightEntry.self
+        ])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try! ModelContainer(for: schema, configurations: config)
+        let ctx = ModelContext(container)
+
+        let pet = Pet(
+            name: "Marcos",
+            species: .perro,
+            breed: "Demo Breed",
+            birthDate: Calendar.current.date(from: DateComponents(year: 2021, month: 3, day: 14)),
+            sex: .male,
+            color: "Blanco"
+        )
+        if let img = UIImage(named: "MarcosPhoto"), let data = img.jpegData(compressionQuality: 0.9) {
+            pet.photoData = data
+        }
+        ctx.insert(pet)
+        try? ctx.save()
+        return (container, pet)
+    }
+
+    static func setGuide(step: DemoGuideStep) {
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "didChooseDemoPet")
+        defaults.set(false, forKey: "didCompleteDemoGuide")
+        defaults.set(step.rawValue, forKey: "demoGuideStep")
+    }
+}
+
+#Preview("Demo Guide – Próximos") {
+    let (container, pet) = PetDetailDemoGuidePreviewData.makeContainerAndPet()
+    PetDetailDemoGuidePreviewData.setGuide(step: .upcoming)
+    return NavigationStack {
+        PetDetailView(pet: pet)
+    }
+    .modelContainer(container)
+    .environment(\.locale, Locale(identifier: "es"))
+}
+
+#Preview("Demo Guide – Salud") {
+    let (container, pet) = PetDetailDemoGuidePreviewData.makeContainerAndPet()
+    PetDetailDemoGuidePreviewData.setGuide(step: .health)
+    return NavigationStack {
+        PetDetailView(pet: pet)
+    }
+    .modelContainer(container)
+    .environment(\.locale, Locale(identifier: "es"))
+}
+
+#Preview("Demo Guide – Peluquería") {
+    let (container, pet) = PetDetailDemoGuidePreviewData.makeContainerAndPet()
+    PetDetailDemoGuidePreviewData.setGuide(step: .grooming)
+    return NavigationStack {
+        PetDetailView(pet: pet)
+    }
+    .modelContainer(container)
+    .environment(\.locale, Locale(identifier: "es"))
+}
+
+#Preview("Demo Guide – Peso") {
+    let (container, pet) = PetDetailDemoGuidePreviewData.makeContainerAndPet()
+    PetDetailDemoGuidePreviewData.setGuide(step: .weight)
+    return NavigationStack {
+        PetDetailView(pet: pet)
+    }
+    .modelContainer(container)
+    .environment(\.locale, Locale(identifier: "es"))
 }

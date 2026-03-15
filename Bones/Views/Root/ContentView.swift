@@ -11,6 +11,9 @@ import SwiftData
 struct ContentView: View {
     @State private var selection: Tab = .pets
     @Environment(\.modelContext) private var context
+    @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
+    @Query(sort: \Pet.name) private var pets: [Pet]
+    @State private var showOnboarding = false
     @AppStorage("eventsDeepLinkPetID") private var eventsDeepLinkPetID: String = ""
     @AppStorage("eventsDeepLinkPetName") private var eventsDeepLinkPetName: String = ""
     @AppStorage("eventsDeepLinkAction") private var eventsDeepLinkAction: String = ""
@@ -32,6 +35,20 @@ struct ContentView: View {
                 .tag(Tab.settings)
         }
         .syncWidgetData()
+        .onAppear {
+            ensureOnboardingIfNeeded()
+            syncOnboardingVisibility()
+        }
+        .onChange(of: didCompleteOnboarding) { _, _ in
+            syncOnboardingVisibility()
+        }
+        .onChange(of: pets.count) { _, _ in
+            ensureOnboardingIfNeeded()
+            syncOnboardingVisibility()
+        }
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView(didCompleteOnboarding: $didCompleteOnboarding)
+        }
         .onOpenURL { url in
             handleDeepLink(url)
         }
@@ -54,6 +71,16 @@ struct ContentView: View {
         if petID != nil || action != nil {
             selection = .events
         }
+    }
+
+    private func ensureOnboardingIfNeeded() {
+        if !didCompleteOnboarding, !pets.isEmpty {
+            didCompleteOnboarding = true
+        }
+    }
+
+    private func syncOnboardingVisibility() {
+        showOnboarding = !didCompleteOnboarding
     }
 }
 

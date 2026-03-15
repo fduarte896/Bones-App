@@ -70,12 +70,28 @@
 			);
 			target = 0E7A4D2A2E2061DF00102333 /* Bones */;
 		};
+		0E7F0CEA2F6471A10054618B /* Exceptions for "BonesWidget" folder in "Bones" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+			);
+			target = 0E7A4D2A2E2061DF00102333 /* Bones */;
+		};
+		0E7F0CEB2F6471A10054618B /* Exceptions for "BonesWidget" folder in "BonesTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+			);
+			target = 0E1EF2822F51F6EB0081AAB4 /* BonesTests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0E13616F2F5E26FE0006242B /* BonesWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				0E7F0CEA2F6471A10054618B /* Exceptions for "BonesWidget" folder in "Bones" target */,
+				0E7F0CEB2F6471A10054618B /* Exceptions for "BonesWidget" folder in "BonesTests" target */,
 				0E1361842F5E26FF0006242B /* Exceptions for "BonesWidget" folder in "BonesWidgetExtension" target */,
 			);
 			path = BonesWidget;

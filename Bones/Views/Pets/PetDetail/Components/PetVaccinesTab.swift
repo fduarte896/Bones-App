@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct PetVaccinesTab: View {
     @ObservedObject var viewModel: PetDetailViewModel
@@ -819,9 +820,17 @@ private enum VaccinesPreviewData {
 struct DemoSeeder {
     /// Inserta la mascota ficticia "DemoDog" con un puñado de medicamentos variados (vencidos, actuales, futuros)
     static func seedDemoDogWithMedications(in container: ModelContainer) -> Pet {
-        let ctx = ModelContext(container)
-        let demo = Pet(name: "DemoDog", species: .perro, breed: "Demo Breed", sex: .male)
-        ctx.insert(demo)
+        let context = ModelContext(container)
+        return seedDemoDogWithMedications(in: context)
+    }
+
+    static func seedDemoDogWithMedications(in context: ModelContext) -> Pet {
+        let demo = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
+        let demoImage = UIImage(named: "MarcosPhoto")
+        if let uiImage = demoImage {
+            demo.photoData = uiImage.jpegData(compressionQuality: 0.9)
+        }
+        context.insert(demo)
         let now = Date()
         let cal = Calendar.current
         // Vencidos
@@ -835,9 +844,8 @@ struct DemoSeeder {
         // Otra serie futura
         let m6 = Medication(date: cal.date(byAdding: .day, value: 6, to: now)!, pet: demo, name: "Cefalexina (dosis 1/2)", dosage: "500 mg", frequency: "cada 12 h")
         let m7 = Medication(date: cal.date(byAdding: .day, value: 8, to: now)!, pet: demo, name: "Cefalexina (dosis 2/2)", dosage: "500 mg", frequency: "cada 12 h")
-        ctx.insert(m1); ctx.insert(m2); ctx.insert(m3); ctx.insert(m4); ctx.insert(m5); ctx.insert(m6); ctx.insert(m7)
-        try? ctx.save()
+        context.insert(m1); context.insert(m2); context.insert(m3); context.insert(m4); context.insert(m5); context.insert(m6); context.insert(m7)
+        try? context.save()
         return demo
     }
 }
-
