@@ -28,6 +28,7 @@ struct PetsListView: View {
     
     var body: some View {
         NavigationStack {
+            Group {
             if pets.isEmpty {
                 VStack(spacing: 24) {
                     ContentUnavailableView("Sin mascotas",
@@ -203,9 +204,10 @@ struct PetsListView: View {
                     EditPetSheet(pet: pet)
                 }
             }
-        }
-        .navigationDestination(item: $navigateToPetDetail) { pet in
-            PetDetailView(pet: pet)
+            }
+            .navigationDestination(item: $navigateToPetDetail) { pet in
+                PetDetailView(pet: pet)
+            }
         }
         .overlayPreferenceValue(DemoGuideAnchorKey.self) { anchors in
             GeometryReader { proxy in
