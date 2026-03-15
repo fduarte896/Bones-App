@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Observation
 import SwiftData
 import SwiftUI
 
@@ -30,18 +31,19 @@ enum EventTypeFilter: String, CaseIterable, Identifiable {
 }
 
 @MainActor
-final class EventsListViewModel: ObservableObject {
+@Observable
+final class EventsListViewModel {
     
     // MARK: – Public output
-    @Published private(set) var sections: [EventSection] = []
-    @Published var filter: EventTypeFilter = .all {
+    private(set) var sections: [EventSection] = []
+    var filter: EventTypeFilter = .all {
         didSet { buildSections() }
     }
-    @Published var petFilter: PetFilter = .all {
+    var petFilter: PetFilter = .all {
         didSet { buildSections() }
     }
-    @Published private(set) var allPets: [Pet] = []
-    @Published var searchQuery: String = "" {
+    private(set) var allPets: [Pet] = []
+    var searchQuery: String = "" {
         didSet { buildSections() }
     }
 
@@ -49,13 +51,13 @@ final class EventsListViewModel: ObservableObject {
         allPets = (try? context.fetch(FetchDescriptor<Pet>(sortBy: [SortDescriptor(\.name)]))) ?? []
     }
     
-    // Nueva configuración de “pasados”
+    // Nueva configuración de "pasados"
     // - Mostrar vencidos (pendientes en el pasado): ON por defecto
     // - Incluir completados: OFF por defecto
-    @Published var showOverdue: Bool = true {
+    var showOverdue: Bool = true {
         didSet { buildSections() }
     }
-    @Published var includeCompletedPast: Bool = false {
+    var includeCompletedPast: Bool = false {
         didSet { buildSections() }
     }
     
@@ -97,7 +99,7 @@ final class EventsListViewModel: ObservableObject {
     
     // MARK: – Build grouped, sorted sections
     private func buildSections() {
-        let now = Date()
+        let now = Date.now
         let cal = Calendar.current
         
         // 1. Filtrado por tipo y (opcional) mascota
@@ -155,16 +157,15 @@ final class EventsListViewModel: ObservableObject {
     private func matchesSearch(event: any BasicEvent, query: String) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return true }
-        let needle = trimmed.lowercased()
 
-        // Texto
+        // Texto – localizedStandardContains maneja acentos y locale
         let textFields: [String] = [
             event.displayName,
             event.displayType,
             event.notes ?? "",
             event.pet?.name ?? ""
         ]
-        if textFields.contains(where: { $0.lowercased().contains(needle) }) {
+        if textFields.contains(where: { $0.localizedStandardContains(trimmed) }) {
             return true
         }
 
@@ -175,7 +176,7 @@ final class EventsListViewModel: ObservableObject {
 
         // Fecha: fallback por coincidencia en strings formateados
         let dateStrings = formattedDateStrings(for: event.date)
-        return dateStrings.contains(where: { $0.lowercased().contains(needle) })
+        return dateStrings.contains(where: { $0.localizedStandardContains(trimmed) })
     }
 
     private func parseDate(from input: String) -> Date? {
@@ -222,7 +223,7 @@ final class EventsListViewModel: ObservableObject {
     // MARK: – Mutating helpers
     func toggleCompleted(_ event: any BasicEvent) {
         event.isCompleted.toggle()
-        event.completedAt = event.isCompleted ? Date() : nil
+        event.completedAt = event.isCompleted ? .now : nil
         NotificationManager.shared.cancelNotification(id: event.id)
         try? context.save()
         buildSections()

@@ -14,7 +14,7 @@ struct EventsListView: View {
     let context: ModelContext
     
     // 2. ViewModel
-    @StateObject private var vm: EventsListViewModel
+    @State private var vm: EventsListViewModel
     
     // 3. Estados para Quick Add desde la vista global
     @State private var petForQuickAdd: Pet?
@@ -34,63 +34,58 @@ struct EventsListView: View {
     // 5. Init para inyectar context → VM
     init(context: ModelContext) {
         self.context = context
-        _vm = StateObject(wrappedValue: EventsListViewModel(context: context))
+        _vm = State(wrappedValue: EventsListViewModel(context: context))
     }
     
     // 6. UI
     var body: some View {
         NavigationStack {
             List {
+                // Añadimos un id explícito para evitar inferencias costosas
+                ForEach(vm.sections, id: \.title) { section in
+                    Section(section.title) {
+                        ForEach(section.items, id: \.id) { event in
+                            NavigationLink {
+                                EventDetailView(event: event)
+                            } label: {
+                                EventRow(event: event)
+                            }
+                            // Swipe completar
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    vm.toggleCompleted(event)
+                                } label: { Label("Completar", systemImage: "checkmark") }
+                                .tint(.green)
+                            }
+                            // Swipe borrar → delega al padre (estable)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    startDelete(for: event)
+                                } label: { Label("Borrar", systemImage: "trash") }
+                            }
+                        }
+                    }
+                }
+            }
+            .overlay {
                 if vm.sections.isEmpty {
                     if vm.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         ContentUnavailableView("Sin eventos próximos",
                                                systemImage: "calendar")
                     } else {
-                        ContentUnavailableView("Sin resultados",
-                                               systemImage: "magnifyingglass")
-                    }
-                } else {
-                    // Añadimos un id explícito para evitar inferencias costosas
-                    ForEach(vm.sections, id: \.title) { section in
-                        Section(section.title) {
-                            ForEach(section.items, id: \.id) { event in
-                                NavigationLink {
-                                    EventDetailView(event: event)
-                                } label: {
-                                    EventRow(event: event)
-                                }
-                                // Swipe completar
-                                .swipeActions(edge: .leading) {
-                                    Button {
-                                        vm.toggleCompleted(event)
-                                    } label: { Label("Completar", systemImage: "checkmark") }
-                                    .tint(.green)
-                                }
-                                // Swipe borrar → delega al padre (estable)
-                                .swipeActions(edge: .trailing) {
-                                    Button(role: .destructive) {
-                                        startDelete(for: event)
-                                    } label: { Label("Borrar", systemImage: "trash") }
-                                }
-                            }
-                        }
+                        ContentUnavailableView.search
                     }
                 }
             }
             .navigationTitle("Eventos")
             .toolbar {
                 // Botón “+” para agregar evento
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        startQuickAdd()
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Nuevo evento")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Nuevo evento", systemImage: "plus", action: startQuickAdd)
                 }
                 
                 // Botón de filtros extraído a un sub‑view para simplificar el árbol
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     FiltersMenu(vm: vm)
                 }
             }
@@ -106,10 +101,10 @@ struct EventsListView: View {
             applyDeepLinkPetFilterIfNeeded()
             applyDeepLinkActionIfNeeded()
         }
-        .onChange(of: eventsDeepLinkPetID) { _ in
+        .onChange(of: eventsDeepLinkPetID) {
             applyDeepLinkPetFilterIfNeeded()
         }
-        .onChange(of: eventsDeepLinkAction) { _ in
+        .onChange(of: eventsDeepLinkAction) {
             applyDeepLinkActionIfNeeded()
         }
         // Hoja: elegir mascota si el filtro está en “Todas” y hay varias
@@ -277,24 +272,24 @@ struct EventsListView: View {
     // MARK: - Búsqueda de dosis futuras relacionadas (usa el context del padre)
     private func futureMedications(from med: Medication) -> [Medication] {
         guard let petID = med.pet?.id else { return [med] }
-        let base = splitDose(from: med.name).base
+        let base = DoseSeries.splitDoseBase(from: med.name)
         let start = med.date
         let predicate = #Predicate<Medication> { m in
             m.pet?.id == petID && m.date >= start
         }
         let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
-        return fetched.filter { splitDose(from: $0.name).base == base }
+        return fetched.filter { DoseSeries.splitDoseBase(from: $0.name) == base }
     }
     
     private func futureVaccines(from vac: Vaccine) -> [Vaccine] {
         guard let petID = vac.pet?.id else { return [vac] }
-        let base = splitDose(from: vac.vaccineName).base
+        let base = DoseSeries.splitDoseBase(from: vac.vaccineName)
         let start = vac.date
         let predicate = #Predicate<Vaccine> { v in
             v.pet?.id == petID && v.date >= start
         }
         let fetched = (try? context.fetch(FetchDescriptor<Vaccine>(predicate: predicate))) ?? []
-        return fetched.filter { splitDose(from: $0.vaccineName).base == base }
+        return fetched.filter { DoseSeries.splitDoseBase(from: $0.vaccineName) == base }
     }
     
     private func futureDewormings(from dew: Deworming) -> [Deworming] {
@@ -323,30 +318,11 @@ struct EventsListView: View {
         return fetched.filter { norm($0.notes) == baseNotes }.sorted { $0.date < $1.date }
     }
     
-    // Reutiliza el mismo separador de dosis que usas en la fila
-    private func splitDose(from name: String) -> (base: String, dose: String?) {
-        guard name.hasSuffix(")"),
-              let markerRange = name.range(of: " (dosis ", options: [.backwards]) else {
-            return (name, nil)
-        }
-        let openParenIndex = name.index(markerRange.lowerBound, offsetBy: 1)
-        let closingParenIndex = name.index(before: name.endIndex)
-        guard closingParenIndex > openParenIndex else { return (name, nil) }
-        let contentStart = name.index(after: openParenIndex)
-        let inside = String(name[contentStart..<closingParenIndex])
-        if inside.lowercased().hasPrefix("dosis ") {
-            let base = String(name[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-            let dose = inside.replacingOccurrences(of: "dosis", with: "Dosis", options: [.anchored, .caseInsensitive])
-            return (base, dose)
-        } else {
-            return (name, nil)
-        }
-    }
 }
 
 // MARK: - Filtros (sub‑view para simplificar el árbol del toolbar)
 private struct FiltersMenu: View {
-    @ObservedObject var vm: EventsListViewModel
+    @Bindable var vm: EventsListViewModel
     
     var body: some View {
         Menu {
@@ -378,7 +354,8 @@ private struct FiltersMenu: View {
                 .pickerStyle(.inline)
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
+            Label("Filtros", systemImage: "line.3.horizontal.decrease.circle")
+                .labelStyle(.iconOnly)
         }
     }
 }
@@ -387,26 +364,6 @@ private struct FiltersMenu: View {
 private struct EventRow: View {
     let event: any BasicEvent
     
-    // Separa " (dosis X/Y)" del nombre para mostrar subtítulo
-    private func splitDose(from name: String) -> (base: String, dose: String?) {
-        guard name.hasSuffix(")"),
-              let markerRange = name.range(of: " (dosis ", options: [.backwards]) else {
-            return (name, nil)
-        }
-        let openParenIndex = name.index(markerRange.lowerBound, offsetBy: 1) // "("
-        let closingParenIndex = name.index(before: name.endIndex)            // ")"
-        guard closingParenIndex > openParenIndex else { return (name, nil) }
-        let contentStart = name.index(after: openParenIndex)
-        let contentEnd   = closingParenIndex
-        let inside = String(name[contentStart..<contentEnd]) // "dosis X/Y"
-        if inside.lowercased().hasPrefix("dosis ") {
-            let base = String(name[..<markerRange.lowerBound]).trimmingCharacters(in: .whitespaces)
-            let dose = inside.replacingOccurrences(of: "dosis", with: "Dosis", options: [.anchored, .caseInsensitive])
-            return (base, dose)
-        } else {
-            return (name, nil)
-        }
-    }
     
     private var icon: String {
         switch event {
@@ -431,8 +388,8 @@ private struct EventRow: View {
     }
     
     var body: some View {
-        let parsed = splitDose(from: event.displayName)
-        let now = Date()
+        let parsed = DoseSeries.splitDose(from: event.displayName)
+        let now = Date.now
         let cal = Calendar.current
         let isOverdue = !event.isCompleted && event.date < now
         let isTodayOrTomorrow = cal.isDateInToday(event.date) || cal.isDateInTomorrow(event.date)
@@ -509,7 +466,7 @@ private struct TagChip: View {
     
     var body: some View {
         Text(text)
-            .font(.caption2)
+            .font(.caption)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .padding(.vertical, 2)
@@ -602,7 +559,7 @@ extension Calendar {
     func pastSectionKind(for date: Date) -> PastSectionKind {
         if isDateInYesterday(date) { return .yesterday }
         
-        let now = Date()
+        let now = Date.now
         
         // Hace 7 días
         if let weekAgo = self.date(byAdding: .day, value: -7, to: now),
@@ -687,7 +644,7 @@ private enum PreviewData {
         ctx.insert(mishi)
         
         let cal = Calendar.current
-        let now = Date()
+        let now = Date.now
         
         // Helpers de fechas futuras
         let in1h = now.addingTimeInterval(3600)
@@ -771,7 +728,7 @@ private enum PreviewData {
     static func seedOverdueScenario(in container: ModelContainer) {
         let ctx = ModelContext(container)
         let cal = Calendar.current
-        let now = Date()
+        let now = Date.now
         
         let loki = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
         let mishi = Pet(name: "Mishi", species: .gato, breed: "Común", sex: .female)
