@@ -30,9 +30,6 @@
 //        let dews: [Deworming] = fetch(Deworming.self,
 //                                       predicate: #Predicate { !$0.isCompleted && $0.date >= now },
 //                                       sort: .init(\.date, order: .forward))
-//        let grooms: [Grooming] = fetch(Grooming.self,
-//                                        predicate: #Predicate { !$0.isCompleted && $0.date >= now },
-//                                        sort: .init(\.date, order: .forward))
 //        
 //        // El más cercano global
 //        let candidates: [(Date, NextEventPayload)] = [
@@ -54,12 +51,6 @@
 //                                                            petName: d.pet?.name ?? "",
 //                                                            date: d.date,
 //                                                            symbolName: "ladybug.fill")) },
-//            grooms.first.map { g in (g.date, NextEventPayload(id: g.id,
-//                                                              kind: .grooming,
-//                                                              title: g.displayName,
-//                                                              petName: g.pet?.name ?? "",
-//                                                              date: g.date,
-//                                                              symbolName: "scissors")) }
 //        ].compactMap { $0 }
 //        
 //        let next = candidates.min(by: { $0.0 < $1.0 })?.1

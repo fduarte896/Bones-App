@@ -12,9 +12,7 @@ import SwiftUI
 
 enum EventTypeFilter: String, CaseIterable, Identifiable {
     case all        = "Todos"
-    case medication = "Medicamentos"
     case vaccine    = "Vacunas"
-    case grooming   = "Peluquería"
     case weight     = "Peso"
     
     var id: String { rawValue }
@@ -22,9 +20,7 @@ enum EventTypeFilter: String, CaseIterable, Identifiable {
     func matches(_ event: any BasicEvent) -> Bool {
         switch self {
         case .all:         return true
-        case .medication:  return event is Medication
         case .vaccine:     return event is Vaccine
-        case .grooming:    return event is Grooming
         case .weight:      return event is WeightEntry
         }
     }
@@ -75,25 +71,7 @@ final class EventsListViewModel {
     private var allEvents: [any BasicEvent] = []
     
     func fetchAllEvents() {
-        // Trae cada tipo – filtraremos después
-        var combined: [any BasicEvent] = []
-        
-        let meds = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
-        combined.append(contentsOf: meds.map { $0 as any BasicEvent })
-        
-        let vacs = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
-        combined.append(contentsOf: vacs.map { $0 as any BasicEvent })
-        
-        let dews = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
-        combined.append(contentsOf: dews.map { $0 as any BasicEvent })
-        
-        let grooms = (try? context.fetch(FetchDescriptor<Grooming>())) ?? []
-        combined.append(contentsOf: grooms.map { $0 as any BasicEvent })
-        
-        let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
-        combined.append(contentsOf: weights.map { $0 as any BasicEvent })
-        
-        allEvents = combined
+        allEvents = context.fetchAllEvents()
         buildSections()
     }
     
@@ -109,7 +87,7 @@ final class EventsListViewModel {
             matchesSearch(event: event, query: searchQuery)
         }
         
-        // 2. “Hoy” debe incluir todos los pendientes de hoy (aunque ya hayan pasado) + futuros > ahora
+        // 2. "Hoy" debe incluir todos los pendientes de hoy (aunque ya hayan pasado) + futuros > ahora
         let todayPending = filtered.filter { !$0.isCompleted && cal.isDateInToday($0.date) }
         let futureBeyondToday = filtered.filter { !$0.isCompleted && $0.date > now && !cal.isDateInToday($0.date) }
         let futureEvents = (todayPending + futureBeyondToday).sorted { $0.date < $1.date }

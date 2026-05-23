@@ -15,7 +15,6 @@ struct PetUpcomingEventsTab: View {
     // Confirmación de borrado en serie
     @State private var pendingFutureCount = 0
     @State private var showingDeleteDialog = false
-    @State private var pendingMed: Medication?
     @State private var pendingVac: Vaccine?
     @State private var pendingDew: Deworming?
 
@@ -69,14 +68,7 @@ struct PetUpcomingEventsTab: View {
             titleVisibility: .visible
         ) {
             if pendingFutureCount > 0 {
-                if let _ = pendingMed {
-                    Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
-                        deleteThisAndFutureMed()
-                    }
-                    Button("Eliminar solo esta", role: .destructive) {
-                        if let med = pendingMed { deleteSingle(med) }
-                    }
-                } else if let _ = pendingVac {
+                if let _ = pendingVac {
                     Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
                         deleteThisAndFutureVac()
                     }
@@ -109,7 +101,7 @@ struct PetUpcomingEventsTab: View {
 // MARK: - Row
 private struct EventRow: View {
     let event: any BasicEvent
-    
+
     // Separa " (dosis X/Y)" en cualquier displayName
     private func splitDose(from name: String) -> (base: String, dose: String?) {
         guard name.hasSuffix(")"),
@@ -130,42 +122,38 @@ private struct EventRow: View {
             return (name, nil)
         }
     }
-    
+
     private var icon: String {
         switch event {
-        case is Medication:  "pills.fill"
         case is Vaccine:     "syringe"
         case is Deworming:   "ladybug.fill"
-        case is Grooming:    "scissors"
         case is WeightEntry: "scalemass"
         default:             "bell"
         }
     }
-    
+
     private var tint: Color {
         switch event {
-        case is Medication:  return .blue
         case is Vaccine:     return .green
         case is Deworming:   return .orange
-        case is Grooming:    return .teal
         case is WeightEntry: return .gray
         default:             return .secondary
         }
     }
-    
+
     var body: some View {
         let parsed = splitDose(from: event.displayName)
-    
+
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .foregroundStyle(tint)
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(Color(.systemGray6)))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 // Título sin sufijo de dosis
                 Text(parsed.base).fontWeight(.semibold)
-                
+
                 HStack(spacing: 6) {
                     if !event.displayType.isEmpty {
                         TagChip(text: shortTypeLabel, tint: tint)
@@ -183,7 +171,7 @@ private struct EventRow: View {
             }
 
             Spacer()
-            
+
             if isTodayOrTomorrow {
                 Text(event.date, format: .dateTime.hour().minute())
                     .font(.headline)
@@ -193,27 +181,27 @@ private struct EventRow: View {
             }
         }
     }
-    
+
     private var isOverdue: Bool {
         !event.isCompleted && event.date < Date()
     }
-    
+
     private var isTodayOrTomorrow: Bool {
         let cal = Calendar.current
         return cal.isDateInToday(event.date) || cal.isDateInTomorrow(event.date)
     }
-    
+
     private var shortTypeLabel: String {
         if event.displayType == "Desparasitación" { return "Despar." }
         return event.displayType
     }
-    
+
 }
 
 private struct TagChip: View {
     let text: String
     let tint: Color
-    
+
     var body: some View {
         Text(text)
             .font(.caption2)
@@ -230,15 +218,6 @@ private struct TagChip: View {
 private extension PetUpcomingEventsTab {
     func startDelete(for event: any BasicEvent) {
         switch event {
-        case let med as Medication:
-            let count = max(0, DoseSeries.futureMedications(from: med, in: context).count - 1)
-            if count == 0 {
-                deleteSingle(med)
-            } else {
-                pendingMed = med
-                pendingFutureCount = count
-                showingDeleteDialog = true
-            }
         case let vac as Vaccine:
             let count = max(0, DoseSeries.futureVaccines(from: vac, in: context).count - 1)
             if count == 0 {
@@ -258,11 +237,10 @@ private extension PetUpcomingEventsTab {
                 showingDeleteDialog = true
             }
         default:
-            // Grooming y WeightEntry se eliminan directamente
             deleteSingle(event)
         }
     }
-    
+
     func deleteSingle(_ event: any BasicEvent) {
         NotificationManager.shared.cancelNotification(id: event.id)
         context.delete(event)
@@ -271,18 +249,7 @@ private extension PetUpcomingEventsTab {
         viewModel.fetchEvents()
         clearPending()
     }
-    
-    func deleteThisAndFutureMed() {
-        guard let med = pendingMed else { return }
-        for m in DoseSeries.futureMedications(from: med, in: context) {
-            NotificationManager.shared.cancelNotification(id: m.id)
-            context.delete(m)
-        }
-        try? context.save()
-        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
-        viewModel.fetchEvents()
-        clearPending()
-    }
+
     func deleteThisAndFutureVac() {
         guard let vac = pendingVac else { return }
         for v in DoseSeries.futureVaccines(from: vac, in: context) {
@@ -294,6 +261,7 @@ private extension PetUpcomingEventsTab {
         viewModel.fetchEvents()
         clearPending()
     }
+
     func deleteThisAndFutureDew() {
         guard let dew = pendingDew else { return }
         for d in DoseSeries.futureDewormings(from: dew, in: context) {
@@ -305,15 +273,15 @@ private extension PetUpcomingEventsTab {
         viewModel.fetchEvents()
         clearPending()
     }
-    
+
     func clearPending() {
         pendingFutureCount = 0
-        pendingMed = nil
         pendingVac = nil
         pendingDew = nil
         showingDeleteDialog = false
     }
 }
+
 // MARK: - Preview
 
 #Preview("Próximos – Variado") {
@@ -326,12 +294,12 @@ private extension PetUpcomingEventsTab {
 private struct PetUpcomingEventsPreviewHost: View {
     @Environment(\.modelContext) private var context
     @StateObject private var vm: PetDetailViewModel
-    
+
     init() {
         let sampleID = PreviewData.samplePetID
         _vm = StateObject(wrappedValue: PetDetailViewModel(petID: sampleID))
     }
-    
+
     var body: some View {
         PetUpcomingEventsTab(viewModel: vm)
             .onAppear { vm.inject(context: context) }
@@ -340,47 +308,28 @@ private struct PetUpcomingEventsPreviewHost: View {
 
 private enum PreviewData {
     static let samplePetID = UUID()
-    
+
     static func makeContainer() -> ModelContainer {
         let schema = Schema([
             Pet.self,
-            Medication.self,
             Vaccine.self,
             Deworming.self,
-            Grooming.self,
             WeightEntry.self
         ] as [any PersistentModel.Type])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: config)
     }
-    
+
     static func seed(in container: ModelContainer) {
         let ctx = ModelContext(container)
         let cal = Calendar.current
         let now = Date()
-        
+
         // Mascota
         let pet = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
         pet.id = samplePetID
         ctx.insert(pet)
-        
-        // Medicamentos (hoy, mañana, semana próxima)
-        ctx.insert(Medication(date: now.addingTimeInterval(2 * 3600),
-                              pet: pet,
-                              name: "Amoxicilina (dosis 1/3)",
-                              dosage: "250 mg",
-                              frequency: "cada 8 h"))
-        ctx.insert(Medication(date: cal.date(byAdding: .day, value: 1, to: now)!,
-                              pet: pet,
-                              name: "Amoxicilina (dosis 2/3)",
-                              dosage: "250 mg",
-                              frequency: "cada 8 h"))
-        ctx.insert(Medication(date: cal.date(byAdding: .day, value: 5, to: now)!,
-                              pet: pet,
-                              name: "Omeprazol",
-                              dosage: "10 mg",
-                              frequency: "cada día"))
-        
+
         // Vacunas (futuras)
         ctx.insert(Vaccine(date: cal.date(byAdding: .day, value: 3, to: now)!,
                            pet: pet,
@@ -390,29 +339,20 @@ private enum PreviewData {
                            pet: pet,
                            vaccineName: "Moquillo",
                            manufacturer: "VetLabs"))
-        
+
         // Desparasitación (futura cercana)
         ctx.insert(Deworming(date: cal.date(byAdding: .day, value: 7, to: now)!,
                              pet: pet,
                              notes: "Drontal Plus (dosis 1/2)",
                              prescriptionImageData: nil,
                              seriesID: UUID()))
-        
-        // Grooming (esta semana)
-        let groom = Grooming(date: cal.date(byAdding: .day, value: 4, to: now)!,
-                             pet: pet,
-                             location: "PetSpa",
-                             notes: "Corte y baño",
-                             services: [.bano, .cortePelo],
-                             totalPrice: 45)
-        ctx.insert(groom)
-        
+
         // Peso (mañana)
         ctx.insert(WeightEntry(date: cal.date(byAdding: .day, value: 1, to: now)!,
                                pet: pet,
                                weightKg: 18.4,
                                notes: "Control mensual"))
-        
+
         try? ctx.save()
     }
 }

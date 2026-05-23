@@ -26,12 +26,9 @@ enum ThemeMode: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     // Persistencia en UserDefaults mediante @AppStorage
-    @AppStorage("themeMode") private var theme: ThemeMode = .system
-    @AppStorage("defaultLeadTime") private var leadTime: Int = 60   // minutos
-    
-    // Moneda global de la app
-    // "AUTO" = usar Locale del dispositivo
-    @AppStorage("appCurrencyCode") private var appCurrencyCode: String = (Locale.current.currency?.identifier ?? "USD")
+    @AppStorage(AppStorageKey.themeMode)       private var theme: ThemeMode = .system
+    @AppStorage(AppStorageKey.defaultLeadTime) private var leadTime: Int = 60
+    @AppStorage(AppStorageKey.appCurrencyCode) private var appCurrencyCode: String = (Locale.current.currency?.identifier ?? "USD")
     
     // Calcula versión y build
     private var versionString: String {

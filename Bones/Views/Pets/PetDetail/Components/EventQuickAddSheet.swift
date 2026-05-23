@@ -1,7 +1,6 @@
 //
 //  EventQuickAddSheet.swift
 //  Bones
-//
 
 import SwiftUI
 import SwiftData
@@ -9,18 +8,16 @@ import UIKit
 
 // MARK: - Tipos de evento
 enum EventKind: String, CaseIterable, Identifiable {
-    case medication  = "Medicamento"
-    case vaccine     = "Vacuna"
-    case grooming    = "Peluquería"
-    case weight      = "Peso"
+    case deworming = "Desparasitación"
+    case vaccine   = "Vacuna"
+    case weight    = "Peso"
     
     var id: String { rawValue }
     var icon: String {
         switch self {
-        case .medication: "pills.fill"
-        case .vaccine:    "syringe"
-        case .grooming:   "scissors"
-        case .weight:     "scalemass"
+        case .deworming: "ladybug.fill"
+        case .vaccine:   "syringe"
+        case .weight:    "scalemass"
         }
     }
 }
@@ -40,19 +37,13 @@ struct EventQuickAddSheet: View {
     
     // Guardamos los parámetros para sincronización defensiva
     private let initialKindParam: EventKind
-    private let initialIsDewormingParam: Bool
     
     // Init
-    init(pet: Pet, initialKind: EventKind = .medication, isDewormingInitial: Bool = false) {
+    init(pet: Pet, initialKind: EventKind = .vaccine) {
         self.pet = pet
         self.initialKindParam = initialKind
-        self.initialIsDewormingParam = (initialKind == .medication) ? isDewormingInitial : false
-        
         _kind = State(initialValue: initialKind)
-        _isDeworming = State(initialValue: (initialKind == .medication) ? isDewormingInitial : false)
-        
-        // DEBUG
-        print("[QuickAddSheet.init] initialKind=\(initialKind) isDew=\(isDewormingInitial)")
+        print("[QuickAddSheet.init] initialKind=\(initialKind)")
     }
     
     // ----------------- Estado -----------------
@@ -62,13 +53,7 @@ struct EventQuickAddSheet: View {
     @State private var title = ""
     @State private var eventDate = Date().addingTimeInterval(60*60)
     
-    // Medicamento
-    @State private var dosage = ""
-    @State private var frequency = ""
-    // NUEVO: marcar como desparasitante
-    @State private var isDeworming = false
-    
-    // NUEVO: RRULE para desparasitación
+    // Desparasitación – RRULE
     @State private var rruleEnabled = false
     @State private var rruleIntervalValue = 3
     @State private var rruleIntervalUnit: IntervalUnit = .months
@@ -76,33 +61,18 @@ struct EventQuickAddSheet: View {
     // Vacuna
     @State private var manufacturer = ""
     
-    // Grooming
-    @State private var location = ""
-    @State private var selectedServices: Set<GroomingService> = []
-    @State private var priceText: String = ""
-    
     // Peso
     enum WeightUnit: String, CaseIterable, Identifiable { case kg = "kg", lb = "lb"; var id: Self { self } }
     @State private var weightText = ""
     @State private var weightUnit: WeightUnit = .kg
     @State private var weightNotes = ""
     
-    // Mostrar botón “Ahora” solo si el usuario cambió la fecha en Peso
+    // Mostrar botón "Ahora" solo si el usuario cambió la fecha en Peso
     @State private var weightDateDirty = false
     @State private var isSettingEventDateProgrammatically = false
     
     // Programación futura
     @State private var scheduleEnabled = false
-    
-    // — Medicamentos —
-    @State private var scheduleMode: ScheduleMode = .interval
-    @State private var intervalValue = 8
-    @State private var intervalUnit: IntervalUnit = .hours
-    // compat: no usado en .interval
-    @State private var repeatCount = 1
-    
-    @State private var timesPerDay = 3
-    @State private var durationDays = 5   // también usado en .interval
     
     // — Vacunas —
     // Modo
@@ -129,11 +99,6 @@ struct EventQuickAddSheet: View {
     // Manual (fechas adicionales)
     @State private var vaccineDoses: [VaccineDose] = []
     
-    // Moneda local (para mostrar en el campo de precio)
-    private var currencyCode: String {
-        Locale.current.currency?.identifier ?? "USD"
-    }
-    
     var body: some View {
         NavigationStack {
             Form {
@@ -144,8 +109,7 @@ struct EventQuickAddSheet: View {
                             Label(k.rawValue, systemImage: k.icon).tag(k)
                         }
                     }
-                    .pickerStyle(.menu) // ← Popup/menú emergente anclado al row
-
+                    .pickerStyle(.menu)
                 }
                 
                 // ---------- Detalles ----------
@@ -155,8 +119,8 @@ struct EventQuickAddSheet: View {
                 Section("Fecha") {
                     let dateLabel: String = {
                         switch kind {
-                        case .medication, .vaccine: return "Primera dosis"
-                        case .grooming, .weight:    return "Fecha y hora"
+                        case .deworming, .vaccine: return "Primera dosis"
+                        case .weight:              return "Fecha y hora"
                         }
                     }()
                     DatePicker(dateLabel,
@@ -180,7 +144,7 @@ struct EventQuickAddSheet: View {
                 futureScheduleSection
                 
                 // ---------- RRULE para desparasitación ----------
-                if kind == .medication && isDeworming {
+                if kind == .deworming {
                     Section("Recordatorio futuro") {
                         Toggle("Crear recordatorio para la próxima recurrencia", isOn: $rruleEnabled)
                         if rruleEnabled {
@@ -192,7 +156,6 @@ struct EventQuickAddSheet: View {
                                         .font(.body.monospacedDigit())
                                 }
                                 Picker("", selection: $rruleIntervalUnit) {
-                                    // Horas también soportado por RRULE, pero normalmente no se usa en desparasitación.
                                     Text(IntervalUnit.days.label).tag(IntervalUnit.days)
                                     Text(IntervalUnit.weeks.label).tag(IntervalUnit.weeks)
                                     Text(IntervalUnit.months.label).tag(IntervalUnit.months)
@@ -230,26 +193,11 @@ struct EventQuickAddSheet: View {
                     print("[QuickAddSheet.onAppear] Resync kind \(kind) → \(initialKindParam)")
                     kind = initialKindParam
                 }
-                if initialKindParam == .medication {
-                    if isDeworming != initialIsDewormingParam {
-                        print("[QuickAddSheet.onAppear] Resync isDeworming \(isDeworming) → \(initialIsDewormingParam)")
-                        isDeworming = initialIsDewormingParam
-                    }
-                } else if isDeworming {
-                    print("[QuickAddSheet.onAppear] Clear isDeworming because kind != .medication")
-                    isDeworming = false
-                }
-                
                 if kind == .weight { prefillWeight() }
-                
-                print("[QuickAddSheet.onAppear] kind=\(kind) isDew=\(isDeworming)")
+                print("[QuickAddSheet.onAppear] kind=\(kind)")
             }
             .onChange(of: kind) { _, newKind in
                 if newKind == .weight { prefillWeight() }
-                // Si cambiamos a otro tipo, limpiar flag de desparasitación salvo que sigamos en Medicamento
-                if newKind != .medication && isDeworming {
-                    isDeworming = false
-                }
             }
             .onChange(of: eventDate) { _, _ in
                 if kind == .weight && !isSettingEventDateProgrammatically {
@@ -262,9 +210,6 @@ struct EventQuickAddSheet: View {
     private var saveDisabled: Bool {
         if kind == .weight {
             return !canSaveWeight()
-        } else if kind == .grooming {
-            let descEmpty = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            return descEmpty && selectedServices.isEmpty
         } else {
             return title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -276,18 +221,10 @@ private extension EventQuickAddSheet {
     
     @ViewBuilder var detailsSection: some View {
         switch kind {
-        case .medication:
-            TextField(isDeworming ? "Nombre del desparasitante" : "Nombre del medicamento", text: $title)
+        case .deworming:
+            TextField("Nombre del desparasitante", text: $title)
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.sentences)
-            
-            // Toggle para tratar como Desparasitación (también visible en la sección Tipo)
-            Toggle("Es un desparasitante?", isOn: $isDeworming)
-            
-            // Campo de dosis (activo incluso cuando es desparasitante; se guardará como nota informativa)
-            TextField("Dosis (ej. 10 mg)", text: $dosage)
-                .autocorrectionDisabled(true)
-                .textInputAutocapitalization(.never)
             
         case .vaccine:
             TextField("Nombre de la vacuna", text: $title)
@@ -296,39 +233,6 @@ private extension EventQuickAddSheet {
             TextField("Fabricante", text: $manufacturer)
                 .autocorrectionDisabled(true)
                 .textInputAutocapitalization(.sentences)
-        case .grooming:
-            TextField("Descripción (opcional)", text: $title)
-                .autocorrectionDisabled(true)
-                .textInputAutocapitalization(.sentences)
-            TextField("Lugar (opcional)", text: $location)
-                .autocorrectionDisabled(true)
-                .textInputAutocapitalization(.sentences)
-            
-            // Precio (opcional)
-            HStack {
-                TextField("Precio (opcional)", text: $priceText)
-                    .keyboardType(.decimalPad)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled(true)
-                Text(currencyCode)
-                    .foregroundStyle(.secondary)
-            }
-            
-            // ---------- Servicios ----------
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Servicios")
-                    .font(.headline)
-                ForEach(GroomingService.allCases) { service in
-                    Toggle(service.displayName, isOn: binding(for: service))
-                        .toggleStyle(.switch)
-                }
-                if !selectedServices.isEmpty {
-                    Button("Limpiar selección", role: .destructive) {
-                        selectedServices.removeAll()
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
         case .weight:
             VStack(alignment: .leading, spacing: 8) {
                 // Medición
@@ -375,59 +279,13 @@ private extension EventQuickAddSheet {
     }
     
     @ViewBuilder var futureScheduleSection: some View {
-        if kind == .medication || kind == .vaccine {
+        if kind == .vaccine {
             Section {
                 Toggle("Programar próximas dosis", isOn: $scheduleEnabled)
                 
                 if scheduleEnabled {
-                    if kind == .medication { medicationControls }
-                    if kind == .vaccine   { vaccineControls }
+                    vaccineControls
                 }
-            }
-        }
-    }
-    
-    // ---- Medicamentos / Desparasitación ----
-    var medicationControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Modo", selection: $scheduleMode) {
-                ForEach(ScheduleMode.allCases) { m in
-                    Text(m.label).tag(m)
-                }
-            }
-            .pickerStyle(.segmented)
-            if scheduleMode == .interval {
-                IntervalRow(value: $intervalValue, unit: $intervalUnit, allowedUnits: [.hours])
-                Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...90)
-                
-                // Resumen en vivo
-                let summary = intervalSummary(
-                    start: eventDate,
-                    durationDays: durationDays,
-                    stepValue: intervalValue,
-                    stepUnit: intervalUnit
-                )
-                if let summary {
-                    Text("Se crearán \(summary.total) dosis en total. Última: \(summary.last.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Stepper("\(timesPerDay) × por día", value: $timesPerDay, in: 1...12)
-                Stepper("Durante \(durationDays) día(s)", value: $durationDays, in: 1...30)
-            }
-            
-            // Previsualización detallada (ambos modos)
-            if let medDates = medicationPreview(
-                start: eventDate,
-                mode: scheduleMode,
-                intervalValue: intervalValue,
-                intervalUnit: intervalUnit,
-                durationDays: durationDays,
-                timesPerDay: timesPerDay
-            ), medDates.count > 1 {
-                MedicationPreviewView(dates: medDates)
-                    .padding(.top, 4)
             }
         }
     }
@@ -609,30 +467,12 @@ private struct VaccinePreviewView: View {
     }
 }
 
-// MARK: - Previsualización de medicamentos
-private struct MedicationPreviewView: View {
-    let dates: [Date]
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Previsualización").font(.headline)
-            ForEach(Array(dates.enumerated()), id: \.offset) { idx, d in
-                HStack {
-                    Text("Dosis \(idx + 1)")
-                    Spacer()
-                    Text(d.formatted(date: .abbreviated, time: .shortened))
-                }
-                .font(.caption)
-            }
-        }
-    }
-}
-
 // MARK: - Guardado
 extension EventQuickAddSheet {
     
     private func saveEvent() {
         if kind == .weight {
-            // Guardar peso (idéntico a la pestaña Peso)
+            // Guardar peso
             guard let val = parseLocalizedDouble(weightText) else { return }
             let kg = weightUnit == .kg ? val : val * 0.45359237
             let w = WeightEntry(date: eventDate, pet: pet, weightKg: kg, notes: weightNotes.isEmpty ? nil : weightNotes)
@@ -645,36 +485,31 @@ extension EventQuickAddSheet {
             return
         }
         
-        // Si es desparasitante, generamos una serieID única para agrupar
-        let dewormSeriesID: UUID? = (kind == .medication && isDeworming) ? UUID() : nil
-        let rrule: String? = (kind == .medication && isDeworming && rruleEnabled) ? makeRRULE(value: rruleIntervalValue, unit: rruleIntervalUnit) : nil
-        
-        // Inserta el evento principal (si hay programación, etiqueta como dosis 1/N)
-        let primaryDoseLabel: String? = {
-            guard kind == .medication, scheduleEnabled else { return nil }
-            if scheduleMode == .interval {
-                let preview = medicationPreview(start: eventDate,
-                                                mode: scheduleMode,
-                                                intervalValue: intervalValue,
-                                                intervalUnit: intervalUnit,
-                                                durationDays: durationDays,
-                                                timesPerDay: timesPerDay)
-                let total = preview?.count ?? 1
-                return total > 1 ? "dosis 1/\(total)" : nil
-            } else {
-                let total = max(1, timesPerDay * durationDays)
-                return total > 1 ? "dosis 1/\(total)" : nil
+        if kind == .deworming {
+            // Guardar desparasitación
+            let dewormSeriesID = UUID()
+            let rrule: String? = rruleEnabled ? makeRRULE(value: rruleIntervalValue, unit: rruleIntervalUnit) : nil
+            let notes = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let d = Deworming(date: eventDate, pet: pet, notes: notes.isEmpty ? nil : notes, prescriptionImageData: nil, seriesID: dewormSeriesID)
+            d.rrule = rrule
+            d.isRecurring = (rrule != nil)
+            context.insert(d)
+            notify(id: d.id, title: "Desparasitación", body: "\(pet.name) – \(notes.isEmpty ? "Desparasitación" : notes)", at: eventDate)
+            
+            // Expansión de RRULE: crea el siguiente recordatorio futuro
+            if let rrule {
+                expandDewormingRecurrence(anchor: eventDate, seriesID: dewormSeriesID, rrule: rrule)
             }
-        }()
-        let primary = insertEvent(on: eventDate, doseLabel: primaryDoseLabel, dewormSeriesID: dewormSeriesID, rrule: rrule)
-        
-        // Programaciones futuras “manuales” (medicamentos/vacunas)
-        if scheduleEnabled { scheduleFuture(from: primary, dewormSeriesID: dewormSeriesID, rrule: rrule) }
-        
-        // Expansión de RRULE para desparasitación (crea futuras ocurrencias reales)
-        if kind == .medication, isDeworming, let rrule, let seriesID = dewormSeriesID {
-            expandDewormingRecurrence(anchor: eventDate, seriesID: seriesID, rrule: rrule)
+            
+            try? context.save()
+            NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+            dismiss()
+            return
         }
+        
+        // Vacuna
+        let primary = insertVaccineEvent(on: eventDate, doseLabel: nil)
+        if scheduleEnabled { scheduleFutureVaccines(from: primary) }
         
         try? context.save()
         NotificationCenter.default.post(name: .eventsDidChange, object: nil)
@@ -682,169 +517,65 @@ extension EventQuickAddSheet {
     }
     
     @discardableResult
-    private func insertEvent(on date: Date,
-                             doseLabel: String?,
-                             dewormSeriesID: UUID? = nil,
-                             rrule: String? = nil) -> any BasicEvent {
-        switch kind {
-        case .medication:
-            if isDeworming {
-                // Notas = título [+ " (dosis X/Y)"]
-                let base = title
-                let notes = doseLabel.map { "\(base) (\($0))" } ?? base
-                let d = Deworming(date: date, pet: pet, notes: notes, prescriptionImageData: nil, seriesID: dewormSeriesID)
-                d.rrule = rrule
-                d.isRecurring = (rrule != nil)
-                context.insert(d)
-                notify(id: d.id, title: "Desparasitación",
-                       body: "\(pet.name) – \(notes)", at: date)
-                return d
-            } else {
-                let name = doseLabel.map { "\(title) (\($0))" } ?? title
-                let m = Medication(date: date, pet: pet,
-                                   name: name, dosage: dosage, frequency: frequency)
-                context.insert(m)
-                notify(id: m.id, title: "Medicamento",
-                       body: "\(pet.name) – \(name)", at: date)
-                return m
-            }
-        case .vaccine:
-            // Etiquetamos dosis X/Y cuando corresponda
-            let name = doseLabel.map { "\(title) (\($0))" } ?? title
-            let v = Vaccine(date: date, pet: pet,
-                            vaccineName: name, manufacturer: manufacturer)
-            context.insert(v)
-            notify(id: v.id, title: "Vacuna",
-                   body: "\(pet.name) – \(title)", at: date)
-            return v
-        case .grooming:
-            let notes = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : title
-            let loc = location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : location
-            let services = Array(selectedServices)
-            let price = parseLocalizedDouble(priceText)
-            let g = Grooming(date: date, pet: pet,
-                             location: loc, notes: notes, services: services, totalPrice: price)
-            context.insert(g)
-            // Notificación: prioriza servicios; si no hay, usa descripción
-            let bodyText: String = {
-                if !services.isEmpty {
-                    return services.map { $0.displayName }.joined(separator: ", ")
-                } else {
-                    return notes ?? pet.name
-                }
-            }()
-            notify(id: g.id, title: "Peluquería",
-                   body: "\(pet.name) – \(bodyText)", at: date)
-            return g
-        case .weight:
-            // No se usa aquí; el guardado de peso se maneja arriba
-            let g = Grooming(date: date, pet: pet, location: nil, notes: "")
-            return g
-        }
+    private func insertVaccineEvent(on date: Date, doseLabel: String?) -> Vaccine {
+        let name = doseLabel.map { "\(title) (\($0))" } ?? title
+        let v = Vaccine(date: date, pet: pet,
+                        vaccineName: name, manufacturer: manufacturer)
+        context.insert(v)
+        notify(id: v.id, title: "Vacuna",
+               body: "\(pet.name) – \(title)", at: date)
+        return v
     }
     
-    private func scheduleFuture(from primary: any BasicEvent, dewormSeriesID: UUID? = nil, rrule: String? = nil) {
-        let cal = Calendar.current
-        var next = primary.date
-        var doseIndex = 1
-        
-        func add(_ val: Int, _ unit: IntervalUnit, to date: Date) -> Date {
-            switch unit {
-            case .hours:  cal.date(byAdding: .hour,  value: val, to: date)!
-            case .days:   cal.date(byAdding: .day,   value: val, to: date)!
-            case .weeks:  cal.date(byAdding: .day,   value: 7 * val, to: date)!
-            case .months: cal.date(byAdding: .month, value: val, to: date)!
+    private func scheduleFutureVaccines(from primary: Vaccine) {
+        if vaccineMode == .automatic {
+            // Serie actual
+            // vaccineSeriesDoseCount es "extra", por eso sumamos 1 para incluir la inicial
+            let seriesDates = generateSeries(
+                start: primary.date,
+                count: vaccineSeriesDoseCount + 1,
+                spacingValue: vaccineSeriesSpacingValue,
+                spacingUnit: vaccineSeriesSpacingUnit
+            )
+            let total = seriesDates.count
+            // Omitimos la primera (primary) para mantener consistencia
+            var idx = 2
+            for d in seriesDates.dropFirst() {
+                insertVaccineEvent(on: d, doseLabel: "dosis \(idx)/\(total)")
+                idx += 1
             }
-        }
-        
-        switch kind {
-        case .medication:
-            if scheduleMode == .interval {
-                // Generar todas las fechas hasta el fin (duración en días)
-                let end = cal.date(byAdding: .day, value: durationDays, to: primary.date)!
-                var dates: [Date] = []
-                var current = primary.date
-                while true {
-                    let candidate = add(intervalValue, intervalUnit, to: current)
-                    if candidate > end { break }
-                    dates.append(candidate)
-                    current = candidate
-                }
-                let total = dates.count + 1 // incluye la primera
-                for d in dates {
-                    doseIndex += 1
-                    insertEvent(on: d,
-                                doseLabel: "dosis \(doseIndex)/\(total)",
-                                dewormSeriesID: isDeworming ? dewormSeriesID : nil,
-                                rrule: isDeworming ? rrule : nil)
-                }
-            } else {
-                let total = timesPerDay * durationDays
-                let hours = 24.0 / Double(timesPerDay)
-                for _ in 0..<(total-1) {
-                    doseIndex += 1
-                    next = cal.date(byAdding: .hour,
-                                    value: Int(hours.rounded()),
-                                    to: next)!
-                    insertEvent(on: next,
-                                doseLabel: "dosis \(doseIndex)/\(total)",
-                                dewormSeriesID: isDeworming ? dewormSeriesID : nil,
-                                rrule: isDeworming ? rrule : nil)
-                }
-            }
-        case .vaccine:
-            if vaccineMode == .automatic {
-                // Serie actual
-                // vaccineSeriesDoseCount es "extra", por eso sumamos 1 para incluir la inicial
-                let seriesDates = generateSeries(
+            // Refuerzos
+            if boostersEnabled {
+                let boosterStarts = generateBoosterStarts(
                     start: primary.date,
-                    count: vaccineSeriesDoseCount + 1,
-                    spacingValue: vaccineSeriesSpacingValue,
-                    spacingUnit: vaccineSeriesSpacingUnit
+                    rounds: boosterRoundsCount,
+                    freqValue: boosterFrequencyValue,
+                    freqUnit: boosterFrequencyUnit
                 )
-                let total = seriesDates.count
-                // Omitimos la primera (primary) para mantener consistencia con medicamentos
-                var idx = 2
-                for d in seriesDates.dropFirst() {
-                    insertEvent(on: d, doseLabel: "dosis \(idx)/\(total)")
-                    idx += 1
-                }
-                // Refuerzos
-                if boostersEnabled {
-                    let boosterStarts = generateBoosterStarts(
-                        start: primary.date,
-                        rounds: boosterRoundsCount,
-                        freqValue: boosterFrequencyValue,
-                        freqUnit: boosterFrequencyUnit
-                    )
-                    for start in boosterStarts {
-                        if boosterIncludesSeries {
-                            // En refuerzo, si se incluye serie corta, también tratamos "extra"
-                            let round = generateSeries(
-                                start: start,
-                                count: vaccineSeriesDoseCount + 1,
-                                spacingValue: vaccineSeriesSpacingValue,
-                                spacingUnit: vaccineSeriesSpacingUnit
-                            )
-                            let rTotal = round.count
-                            var rIdx = 2
-                            for d in round.dropFirst() {
-                                insertEvent(on: d, doseLabel: "dosis \(rIdx)/\(rTotal)")
-                                rIdx += 1
-                            }
-                        } else {
-                            insertEvent(on: start, doseLabel: nil)
+                for start in boosterStarts {
+                    if boosterIncludesSeries {
+                        let round = generateSeries(
+                            start: start,
+                            count: vaccineSeriesDoseCount + 1,
+                            spacingValue: vaccineSeriesSpacingValue,
+                            spacingUnit: vaccineSeriesSpacingUnit
+                        )
+                        let rTotal = round.count
+                        var rIdx = 2
+                        for d in round.dropFirst() {
+                            insertVaccineEvent(on: d, doseLabel: "dosis \(rIdx)/\(rTotal)")
+                            rIdx += 1
                         }
+                    } else {
+                        insertVaccineEvent(on: start, doseLabel: nil)
                     }
                 }
-            } else {
-                // Modo manual: usar fechas provistas (sin etiquetar automáticamente)
-                for dose in vaccineDoses.sorted(by: { $0.date < $1.date }) {
-                    insertEvent(on: dose.date, doseLabel: nil)
-                }
             }
-        case .grooming, .weight:
-            break
+        } else {
+            // Modo manual: usar fechas provistas
+            for dose in vaccineDoses.sorted(by: { $0.date < $1.date }) {
+                insertVaccineEvent(on: dose.date, doseLabel: nil)
+            }
         }
     }
     
@@ -921,22 +652,17 @@ private extension EventQuickAddSheet {
         return Double(dot)
     }
     
-    // MARK: - Selección de servicios (Grooming)
-    func binding(for service: GroomingService) -> Binding<Bool> {
-        Binding(
-            get: { selectedServices.contains(service) },
-            set: { isOn in
-                if isOn { selectedServices.insert(service) }
-                else { selectedServices.remove(service) }
-            }
-        )
-    }
-    
     // MARK: - Generadores de fechas y previsualizaciones
     
     // Agrega un intervalo a una fecha según la unidad
     func addInterval(_ value: Int, unit: IntervalUnit, to date: Date) -> Date {
-        MedicationScheduling.addInterval(value, unit: unit, to: date)
+        let cal = Calendar.current
+        switch unit {
+        case .hours:  return cal.date(byAdding: .hour, value: value, to: date) ?? date
+        case .days:   return cal.date(byAdding: .day, value: value, to: date) ?? date
+        case .weeks:  return cal.date(byAdding: .weekOfYear, value: value, to: date) ?? date
+        case .months: return cal.date(byAdding: .month, value: value, to: date) ?? date
+        }
     }
     
     // Serie de vacunas (incluye la fecha inicial). 'count' mínimo 1.
@@ -1009,31 +735,6 @@ private extension EventQuickAddSheet {
         return VaccinePreview(seriesDates: series, boosterRounds: rounds)
     }
     
-    // Previsualización/Resumen de medicamentos (ambos modos)
-    func medicationPreview(start: Date,
-                           mode: ScheduleMode,
-                           intervalValue: Int,
-                           intervalUnit: IntervalUnit,
-                           durationDays: Int,
-                           timesPerDay: Int) -> [Date]? {
-        MedicationScheduling.preview(start: start,
-                                     mode: mode,
-                                     intervalValue: intervalValue,
-                                     intervalUnit: intervalUnit,
-                                     durationDays: durationDays,
-                                     timesPerDay: timesPerDay)
-    }
-    
-    func intervalSummary(start: Date,
-                         durationDays: Int,
-                         stepValue: Int,
-                         stepUnit: IntervalUnit) -> (total: Int, last: Date)? {
-        MedicationScheduling.intervalSummary(start: start,
-                                            durationDays: durationDays,
-                                            stepValue: stepValue,
-                                            stepUnit: stepUnit)
-    }
-    
     // MARK: - RRULE helpers
     func makeRRULE(value: Int, unit: IntervalUnit) -> String {
         let freq: String
@@ -1045,11 +746,6 @@ private extension EventQuickAddSheet {
         }
         let interval = max(1, value)
         return "FREQ=\(freq);INTERVAL=\(interval)"
-    }
-    
-    func rrulePreviewString() -> String? {
-        guard rruleEnabled else { return nil }
-        return makeRRULE(value: rruleIntervalValue, unit: rruleIntervalUnit)
     }
     
     // MARK: - RRULE simple (Desparasitación)
@@ -1074,11 +770,16 @@ private extension EventQuickAddSheet {
         default:        unit = .months
         }
         
-        // Solo crea el siguiente recordatorio (sin expandir a múltiples ocurrencias)
+        // Solo crea el siguiente recordatorio
         let next = addInterval(interval, unit: unit, to: anchor)
         if !existsDeworming(seriesID: seriesID, date: next, petID: pet.id) {
-            // Reusa insertEvent para notificaciones y campos
-            _ = insertEvent(on: next, doseLabel: nil, dewormSeriesID: seriesID, rrule: rrule)
+            let notes = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let d = Deworming(date: next, pet: pet, notes: notes.isEmpty ? nil : notes, prescriptionImageData: nil, seriesID: seriesID)
+            d.rrule = rrule
+            d.isRecurring = true
+            context.insert(d)
+            notify(id: d.id, title: "Desparasitación",
+                   body: "\(pet.name) – \(notes.isEmpty ? "Desparasitación" : notes)", at: next)
         }
     }
     
@@ -1100,7 +801,7 @@ private extension Double {
 
 #Preview {
     NavigationStack {
-        EventQuickAddSheet(pet: Pet(name: "Firulais"), initialKind: .medication)
+        EventQuickAddSheet(pet: Pet(name: "Firulais"), initialKind: .vaccine)
             .modelContainer(for: Pet.self, inMemory: true)
     }
 }

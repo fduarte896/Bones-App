@@ -8,7 +8,7 @@
 import Foundation
 
 struct QuickAddGenerator {
-    static func generateMedicationSeries(
+    static func generateDateSeries(
         baseDate: Date,
         repeatCount: Int,
         intervalHours: Int

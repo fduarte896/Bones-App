@@ -23,7 +23,7 @@ struct UpcomingEventsProvider: AppIntentTimelineProvider {
         UpcomingEventsEntry(date: .now,
                             pet: WidgetPetSummary(id: "preview", name: "Loki"),
                             events: [
-                                WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(3600)),
+                                WidgetEventSummary(id: "1", title: "Vacuna rabia", type: "Vacuna", date: .now.addingTimeInterval(3600)),
                                 WidgetEventSummary(id: "2", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(7200))
                             ],
                             selectedType: .all)
@@ -63,14 +63,10 @@ struct UpcomingEventsProvider: AppIntentTimelineProvider {
         switch filter {
         case .all:
             return true
-        case .medication:
-            return normalized.contains("medicamento")
         case .vaccine:
             return normalized.contains("vacuna")
         case .deworming:
             return normalized.contains("desparas")
-        case .grooming:
-            return normalized.contains("peluquer")
         case .weight:
             return normalized.contains("peso")
         }
@@ -314,14 +310,10 @@ struct BonesUpcomingEventsWidgetView: View {
         switch entry.selectedType {
         case .all:
             return "Todos"
-        case .medication:
-            return "Meds"
         case .vaccine:
             return "Vacunas"
         case .deworming:
             return "Despar."
-        case .grooming:
-            return "Peluquería"
         case .weight:
             return "Peso"
         }
@@ -402,8 +394,6 @@ struct BonesUpcomingEventsWidgetView: View {
 
     private func chipTint(for type: String) -> Color {
         switch type.lowercased() {
-        case "medicamento", "medicamentos":
-            return .blue
         case "vacuna", "vacunas":
             return .green
         case "desparasitación", "desparasitacion":
@@ -423,8 +413,6 @@ struct BonesUpcomingEventsWidgetView: View {
 
     private func iconName(for type: String) -> String {
         switch type.lowercased() {
-        case "medicamento", "medicamentos":
-            return "pills.fill"
         case "vacuna", "vacunas":
             return "syringe"
         case "desparasitación", "desparasitacion":
@@ -518,7 +506,7 @@ struct BonesUpcomingEventsWidget: Widget {
     UpcomingEventsEntry(date: .now,
                         pet: WidgetPetSummary(id: "preview", name: "Loki"),
                         events: [
-                            WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(3600)),
+                            WidgetEventSummary(id: "1", title: "Vacuna rabia", type: "Vacuna", date: .now.addingTimeInterval(3600)),
                             WidgetEventSummary(id: "2", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(7200))
                         ],
                         selectedType: .all)
@@ -533,26 +521,6 @@ struct BonesUpcomingEventsWidget: Widget {
                         selectedType: .all)
 }
 
-#Preview("Small Medicamentos", as: .systemSmall) {
-    BonesUpcomingEventsWidget()
-} timeline: {
-    UpcomingEventsEntry(date: .now,
-                        pet: WidgetPetSummary(id: "preview", name: "Loki"),
-                        events: [
-                            WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(3600))
-                        ],
-                        selectedType: .medication)
-    UpcomingEventsEntry(date: .now,
-                        pet: WidgetPetSummary(id: "preview", name: "Loki"),
-                        events: [],
-                        selectedType: .medication)
-    UpcomingEventsEntry(date: .now,
-                        pet: WidgetPetSummary(id: "preview", name: "Loki"),
-                        events: [
-                            WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(-7200))
-                        ],
-                        selectedType: .medication)
-}
 #Preview(as: .systemMedium) {
     BonesUpcomingEventsWidget()
 } timeline: {
@@ -581,7 +549,7 @@ struct BonesUpcomingEventsWidget: Widget {
     UpcomingEventsEntry(date: .now,
                         pet: WidgetPetSummary(id: "preview", name: "Loki"),
                         events: [
-                            WidgetEventSummary(id: "1", title: "Amoxicilina", type: "Medicamento", date: .now.addingTimeInterval(-3600)),
+                            WidgetEventSummary(id: "1", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(-3600)),
                             WidgetEventSummary(id: "2", title: "Desparasitación", type: "Desparasitación", date: .now.addingTimeInterval(7200)),
                             WidgetEventSummary(id: "3", title: "Baño y corte", type: "Peluquería", date: .now.addingTimeInterval(10800)),
                             WidgetEventSummary(id: "4", title: "Vacuna rabia", type: "Vacuna", date: .now.addingTimeInterval(86400)),

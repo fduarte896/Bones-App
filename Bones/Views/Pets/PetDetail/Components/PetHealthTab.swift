@@ -15,7 +15,6 @@ struct PetHealthTab: View {
     enum HealthSegment: String, CaseIterable, Identifiable {
         case vaccines     = "Vacunas"
         case deworm       = "Desparasitación"
-        case medications  = "Medicamentos"
         var id: Self { self }
     }
     
@@ -45,8 +44,6 @@ struct PetHealthTab: View {
                 PetVaccinesTab(viewModel: viewModel)
             case .deworm:
                 PetDewormingTab(viewModel: viewModel)
-            case .medications:
-                PetMedicationsTab(viewModel: viewModel)
             }
         }
     }
@@ -54,7 +51,7 @@ struct PetHealthTab: View {
 
 // MARK: - Previews
 
-#Preview("Salud – Vacunas/Desparasitación/Medicamentos") {
+#Preview("Salud – Vacunas/Desparasitación") {
     let container = HealthPreviewData.makeContainer()
     let pet = HealthPreviewData.seedHealthData(in: container)
     return PetHealthTabPreviewHost(pet: pet)
@@ -97,10 +94,8 @@ private enum HealthPreviewData {
     static func makeContainer() -> ModelContainer {
         let schema = Schema([
             Pet.self,
-            Medication.self,
             Vaccine.self,
             Deworming.self,
-            Grooming.self,
             WeightEntry.self
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -117,7 +112,7 @@ private enum HealthPreviewData {
         return pet
     }
     
-    // Pet con vacunas, desparasitación (CO) y algunos medicamentos
+    // Pet con vacunas y desparasitación
     @discardableResult
     static func seedHealthData(in container: ModelContainer) -> Pet {
         let ctx = ModelContext(container)
@@ -127,7 +122,7 @@ private enum HealthPreviewData {
         let now = Date()
         let cal = Calendar.current
         
-        // ---------- Vacunas (igual que antes, variado) ----------
+        // ---------- Vacunas ----------
         let v0 = Vaccine(date: now.addingTimeInterval(-10 * 24 * 3600),
                          pet: pet,
                          vaccineName: "Rabia (dosis 0/3)",
@@ -155,8 +150,7 @@ private enum HealthPreviewData {
                          manufacturer: "",
                          notes: "Control")
         
-        // ---------- Desparasitación (CO) ----------
-        // 1) Drontal Plus — hoy + 15 días (2/2), luego refuerzo a 3 meses
+        // ---------- Desparasitación ----------
         let seriesDrontal = UUID()
         let dr1 = Deworming(date: now,
                             pet: pet,
@@ -175,7 +169,6 @@ private enum HealthPreviewData {
                                   prescriptionImageData: nil,
                                   seriesID: seriesDrontal)
         
-        // 2) Endogard — hoy + 15 días (2/2), luego cada 3 meses
         let seriesEndogard = UUID()
         let en1 = Deworming(date: cal.date(byAdding: .day, value: -10, to: now)!,
                             pet: pet,
@@ -194,7 +187,6 @@ private enum HealthPreviewData {
                                   prescriptionImageData: nil,
                                   seriesID: seriesEndogard)
         
-        // 3) Panacur (fenbendazol) — 3 días seguidos y repetir el ciclo a 14 días
         let seriesPanacur = UUID()
         let p1 = Deworming(date: cal.date(byAdding: .day, value: -1, to: now)!,
                            pet: pet,
@@ -212,7 +204,6 @@ private enum HealthPreviewData {
                            notes: "Panacur (dosis 3/3)",
                            prescriptionImageData: nil,
                            seriesID: seriesPanacur)
-        // Repetición del ciclo a 14 días
         let pR1 = Deworming(date: cal.date(byAdding: .day, value: 14, to: now)!,
                             pet: pet,
                             notes: "Panacur (dosis 1/3)",
@@ -229,7 +220,6 @@ private enum HealthPreviewData {
                             prescriptionImageData: nil,
                             seriesID: seriesPanacur)
         
-        // 4) Milbemax — hoy y repetir cada 6 meses
         let seriesMilbemax = UUID()
         let mi1 = Deworming(date: cal.date(byAdding: .day, value: -30, to: now)!,
                             pet: pet,
@@ -248,34 +238,14 @@ private enum HealthPreviewData {
                                prescriptionImageData: nil,
                                seriesID: seriesMilbemax)
         
-        // ---------- Medicamentos (algunos próximos y otros pasados) ----------
-        let m1 = Medication(date: now.addingTimeInterval(6 * 3600),
-                            pet: pet,
-                            name: "Amoxicilina (dosis 1/3)",
-                            dosage: "250 mg",
-                            frequency: "")
-        let m2 = Medication(date: now.addingTimeInterval(14 * 3600),
-                            pet: pet,
-                            name: "Amoxicilina (dosis 2/3)",
-                            dosage: "250 mg",
-                            frequency: "")
-        let m3 = Medication(date: now.addingTimeInterval(-8 * 3600),
-                            pet: pet,
-                            name: "Omeprazol",
-                            dosage: "20 mg",
-                            frequency: "cada día")
-        m3.isCompleted = true
-        
         // Insertar todo
         [v0, v1, v2, v3, v4].forEach { ctx.insert($0) }
         [dr1, dr2, drBooster,
          en1, en2, enBooster,
          p1, p2, p3, pR1, pR2, pR3,
          mi1, mi2, miNext].forEach { ctx.insert($0) }
-        [m1, m2, m3].forEach { ctx.insert($0) }
         
         try? ctx.save()
         return pet
     }
 }
-

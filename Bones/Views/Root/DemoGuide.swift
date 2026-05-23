@@ -13,9 +13,8 @@ enum DemoGuideStep: Int, CaseIterable {
     case detail = 2
     case upcoming = 3
     case health = 4
-    case grooming = 5
-    case weight = 6
-    case done = 7
+    case weight = 5
+    case done = 6
 }
 
 enum DemoGuideAnchor: Hashable {
@@ -23,8 +22,8 @@ enum DemoGuideAnchor: Hashable {
     case addPetButton
     case detailButton
     case tabUpcoming
-    case tabHealth
-    case tabGrooming
+    case tabVaccines
+    case tabDeworming
     case tabWeight
 }
 

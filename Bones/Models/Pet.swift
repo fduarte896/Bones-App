@@ -24,10 +24,8 @@ class Pet {
     var notes: String?
 
     // Relación inversa; cada evento tiene var pet: Pet?
-    @Relationship(deleteRule: .cascade, inverse: \Medication.pet)  var medications: [Medication] = []
     @Relationship(deleteRule: .cascade, inverse: \Vaccine.pet)     var vaccines: [Vaccine] = []
     @Relationship(deleteRule: .cascade, inverse: \Deworming.pet)   var dewormings: [Deworming] = []
-    @Relationship(deleteRule: .cascade, inverse: \Grooming.pet)    var groomings: [Grooming] = []
     @Relationship(deleteRule: .cascade, inverse: \WeightEntry.pet) var weights: [WeightEntry] = []
 
     init(name: String,

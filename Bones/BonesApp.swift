@@ -15,10 +15,8 @@ struct BonesApp: App {
             ContentView()
                 .modelContainer(for: [
                     Pet.self,
-                    Medication.self,
                     Vaccine.self,
                     Deworming.self,
-                    Grooming.self,
                     WeightEntry.self
                 ])
         }

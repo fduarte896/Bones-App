@@ -1,16 +1,11 @@
-//
-//  PetsListViewModel.swift
-//  Bones
-//
-//  Created by Felipe Duarte on 11/07/25.
-//
-import  SwiftUI
+import Observation
+import SwiftUI
 import SwiftData
 
-
 @MainActor
-final class PetsListViewModel: ObservableObject {
-    @Published private(set) var pets: [Pet] = []
+@Observable
+final class PetsListViewModel {
+    private(set) var pets: [Pet] = []
     private var context: ModelContext
 
     init(context: ModelContext) {

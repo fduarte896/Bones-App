@@ -15,8 +15,8 @@ struct OnboardingView: View {
 
     @Query(sort: \Pet.name) private var pets: [Pet]
     @State private var isPresentingAdd = false
-    @AppStorage("didChooseDemoPet") private var didChooseDemoPet: Bool = false
-    @AppStorage("demoGuideStep") private var demoGuideStep: Int = 0
+    @AppStorage(AppStorageKey.didChooseDemoPet) private var didChooseDemoPet: Bool = false
+    @AppStorage(AppStorageKey.demoGuideStep)    private var demoGuideStep: Int = 0
 
     private let primaryColor = Color(red: 0.28, green: 0.63, blue: 0.96)
     private let secondaryColor = Color(red: 0.92, green: 0.96, blue: 1.00)
@@ -89,7 +89,7 @@ struct OnboardingView: View {
                 .foregroundStyle(Color.black.opacity(0.86))
                 .multilineTextAlignment(.center)
 
-            Text("Organiza vacunas, medicamentos y recordatorios sin esfuerzo desde el primer día.")
+            Text("Organiza vacunas, desparasitaciones y registros de peso sin esfuerzo desde el primer día.")
                 .font(.system(size: 17, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.black.opacity(0.65))
                 .multilineTextAlignment(.center)
@@ -99,7 +99,7 @@ struct OnboardingView: View {
     private var valueProps: some View {
         VStack(spacing: 12) {
             featureRow(icon: "calendar.badge.checkmark", title: "Eventos claros", subtitle: "Fechas próximas y vencidas a la vista.")
-            featureRow(icon: "pills.fill", title: "Medicaciones ordenadas", subtitle: "Series y recordatorios sin duplicados.")
+            featureRow(icon: "cross.case.fill", title: "Vacunas al día", subtitle: "Series, dosis y refuerzos sin duplicados.")
             featureRow(icon: "heart.text.square.fill", title: "Historial completo", subtitle: "Peso, vacunas y cuidados en un solo lugar.")
         }
         .padding(20)
@@ -127,7 +127,7 @@ struct OnboardingView: View {
 
             Button {
                 if pets.isEmpty {
-                    _ = DemoSeeder.seedDemoDogWithMedications(in: context)
+                    _ = DemoSeeder.seedDemoDog(in: context)
                 }
                 didChooseDemoPet = true
                 demoGuideStep = DemoGuideStep.summary.rawValue
@@ -186,5 +186,5 @@ struct OnboardingView: View {
 
 #Preview {
     OnboardingView(didCompleteOnboarding: .constant(false))
-        .modelContainer(for: [Pet.self, Medication.self, Vaccine.self, Deworming.self, Grooming.self, WeightEntry.self], inMemory: true)
+        .modelContainer(for: [Pet.self, Vaccine.self, Deworming.self, WeightEntry.self], inMemory: true)
 }

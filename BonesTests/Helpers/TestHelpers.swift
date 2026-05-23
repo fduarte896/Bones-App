@@ -19,10 +19,8 @@ extension Tag {
 func makeContext() throws -> ModelContext {
     let schema = Schema([
         Pet.self,
-        Medication.self,
         Vaccine.self,
         Deworming.self,
-        Grooming.self,
         WeightEntry.self
     ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

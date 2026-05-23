@@ -124,20 +124,6 @@ struct DoseSeriesDataTests {
         #expect(DoseSeries.isBooster(v1, among: [v1]) == false)
     }
 
-    @Test func futureMedications_filtersByBase() throws {
-        let pet = makePet(in: context)
-        let m1 = Medication(date: makeDate(day: 15), pet: pet, name: "Amoxicilina (dosis 1/3)", dosage: "500mg", frequency: "8h")
-        let m2 = Medication(date: makeDate(day: 16), pet: pet, name: "Amoxicilina (dosis 2/3)", dosage: "500mg", frequency: "8h")
-        let m3 = Medication(date: makeDate(day: 16), pet: pet, name: "Ibuprofeno", dosage: "200mg", frequency: "12h")
-        context.insert(m1)
-        context.insert(m2)
-        context.insert(m3)
-        try context.save()
-
-        let result = DoseSeries.futureMedications(from: m1, in: context)
-        #expect(result.count == 2, "Should find 2 Amoxicilina meds, not Ibuprofeno")
-    }
-
     @Test func futureDewormings_matchesBySeriesID() throws {
         let pet = makePet(in: context)
         let seriesID = UUID()

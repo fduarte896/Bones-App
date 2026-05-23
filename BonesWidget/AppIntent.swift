@@ -10,19 +10,15 @@ import AppIntents
 
 enum EventTypeIntent: String, AppEnum {
     case all
-    case medication
     case vaccine
     case deworming
-    case grooming
     case weight
 
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Tipo de evento"
     static var caseDisplayRepresentations: [EventTypeIntent: DisplayRepresentation] = [
         .all: "Todos",
-        .medication: "Medicamentos",
         .vaccine: "Vacunas",
         .deworming: "Desparasitación",
-        .grooming: "Peluquería",
         .weight: "Peso"
     ]
 }

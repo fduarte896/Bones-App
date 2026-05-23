@@ -10,7 +10,6 @@
 		0E13616C2F5E26FE0006242B /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E13616B2F5E26FE0006242B /* WidgetKit.framework */; };
 		0E13616E2F5E26FE0006242B /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E13616D2F5E26FE0006242B /* SwiftUI.framework */; };
 		0E13617F2F5E26FF0006242B /* BonesWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0E1361692F5E26FE0006242B /* BonesWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		0EDA031E2E8C837F00F002E6 /* AIEngineImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDA031D2E8C837F00F002E6 /* AIEngineImpl.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,7 +51,6 @@
 		0E1EF27E2F5110C50081AAB4 /* AddPetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPetTests.swift; sourceTree = "<group>"; };
 		0E1EF2832F51F6EB0081AAB4 /* BonesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BonesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0E7A4D2B2E2061DF00102333 /* Bones.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bones.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		0EDA031D2E8C837F00F002E6 /* AIEngineImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngineImpl.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -172,7 +170,6 @@
 				0E13616F2F5E26FE0006242B /* BonesWidget */,
 				0E13616A2F5E26FE0006242B /* Frameworks */,
 				0E7A4D2C2E2061DF00102333 /* Products */,
-				0EDA031D2E8C837F00F002E6 /* AIEngineImpl.swift */,
 				0E1EF27D2F5110BE0081AAB4 /* BonesTests */,
 				0E1361632F5E26200006242B /* Widgets */,
 			);
@@ -346,7 +343,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0EDA031E2E8C837F00F002E6 /* AIEngineImpl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

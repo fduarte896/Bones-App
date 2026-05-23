@@ -25,34 +25,22 @@ struct EventsListViewModelTests {
         #expect(vm.sections.isEmpty)
     }
 
-    @Test func fetchAllEvents_medicationIncluded() throws {
+    @Test func fetchAllEvents_vaccineIncluded() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        let med = Medication(date: futureDate, pet: pet, name: "Amoxicilina", dosage: "500mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
 
         let vm = makeVM()
         let allItems = vm.sections.flatMap(\.items)
-        #expect(allItems.isEmpty == false, "Future medication should appear in sections")
+        #expect(allItems.isEmpty == false, "Future vaccine should appear in sections")
     }
 
     // MARK: - Type filter
 
-    @Test func filter_medication_onlyShowsMedications() throws {
-        let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h"))
-        context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia"))
-        try context.save()
-
-        let vm = makeVM()
-        vm.filter = .medication
-        let allItems = vm.sections.flatMap(\.items)
-        #expect(allItems.allSatisfy { $0 is Medication })
-    }
-
     @Test func filter_vaccine_onlyShowsVaccines() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h"))
+        context.insert(Deworming(date: futureDate, pet: pet))
         context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia"))
         try context.save()
 
@@ -64,8 +52,8 @@ struct EventsListViewModelTests {
 
     @Test func filter_all_showsEverything() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h"))
         context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia"))
+        context.insert(Deworming(date: futureDate, pet: pet))
         try context.save()
 
         let vm = makeVM()
@@ -79,34 +67,34 @@ struct EventsListViewModelTests {
     @Test func petFilter_filtersCorrectly() throws {
         let pet2 = makePet(in: context, name: "Max")
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Luna's Med", dosage: "10mg", frequency: "8h"))
-        context.insert(Medication(date: futureDate, pet: pet2, name: "Max's Med", dosage: "10mg", frequency: "8h"))
+        context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Luna's Vaccine"))
+        context.insert(Vaccine(date: futureDate, pet: pet2, vaccineName: "Max's Vaccine"))
         try context.save()
 
         let vm = makeVM()
         vm.petFilter = PetFilter(id: pet.id, name: pet.name)
         let allItems = vm.sections.flatMap(\.items)
         #expect(allItems.count == 1)
-        let med = try #require(allItems.first as? Medication)
-        #expect(med.name == "Luna's Med")
+        let vac = try #require(allItems.first as? Vaccine)
+        #expect(vac.vaccineName == "Luna's Vaccine")
     }
 
     // MARK: - Search
 
     @Test func searchQuery_matchesByDisplayName() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Amoxicilina", dosage: "500mg", frequency: "8h"))
+        context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia"))
         try context.save()
 
         let vm = makeVM()
-        vm.searchQuery = "amoxi"
+        vm.searchQuery = "rabia"
         let allItems = vm.sections.flatMap(\.items)
         #expect(allItems.isEmpty == false)
     }
 
     @Test func searchQuery_matchesByPetName() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h"))
+        context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia"))
         try context.save()
 
         let vm = makeVM()
@@ -117,7 +105,7 @@ struct EventsListViewModelTests {
 
     @Test func searchQuery_emptyString_showsAll() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h"))
+        context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia"))
         try context.save()
 
         let vm = makeVM()
@@ -128,7 +116,7 @@ struct EventsListViewModelTests {
 
     @Test func searchQuery_noMatch_emptySections() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        context.insert(Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h"))
+        context.insert(Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia"))
         try context.save()
 
         let vm = makeVM()
@@ -141,38 +129,38 @@ struct EventsListViewModelTests {
 
     @Test func toggleCompleted_marksEventCompleted() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        let med = Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
 
         let vm = makeVM()
-        vm.toggleCompleted(med)
-        #expect(med.isCompleted == true)
-        #expect(med.completedAt != nil)
+        vm.toggleCompleted(vac)
+        #expect(vac.isCompleted == true)
+        #expect(vac.completedAt != nil)
     }
 
     @Test func toggleCompleted_secondToggle_unmarksCompleted() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        let med = Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
 
         let vm = makeVM()
-        vm.toggleCompleted(med)
-        vm.toggleCompleted(med)
-        #expect(med.isCompleted == false)
-        #expect(med.completedAt == nil)
+        vm.toggleCompleted(vac)
+        vm.toggleCompleted(vac)
+        #expect(vac.isCompleted == false)
+        #expect(vac.completedAt == nil)
     }
 
     @Test func delete_removesEvent() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        let med = Medication(date: futureDate, pet: pet, name: "Med", dosage: "10mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
 
         let vm = makeVM()
         #expect(vm.sections.flatMap(\.items).isEmpty == false)
-        vm.delete(med)
+        vm.delete(vac)
         #expect(vm.sections.flatMap(\.items).isEmpty)
     }
 
@@ -180,13 +168,13 @@ struct EventsListViewModelTests {
 
     @Test func showOverdue_includesPastPendingEvents() throws {
         let pastDate = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-        let med = Medication(date: pastDate, pet: pet, name: "Overdue Med", dosage: "10mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: pastDate, pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
 
         let vm = makeVM()
         vm.showOverdue = true
         let allItems = vm.sections.flatMap(\.items)
-        #expect(allItems.contains(where: { ($0 as? Medication)?.name == "Overdue Med" }))
+        #expect(allItems.contains(where: { ($0 as? Vaccine)?.vaccineName == "Rabia" }))
     }
 }

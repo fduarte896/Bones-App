@@ -47,7 +47,7 @@ struct WidgetDataStoreTests {
 
     @Test func widgetEventSummary_datePreserved() throws {
         let date = makeDate(year: 2026, month: 3, day: 15, hour: 14, minute: 30)
-        let event = WidgetEventSummary(id: "e1", title: "Test", type: "Medication", date: date)
+        let event = WidgetEventSummary(id: "e1", title: "Test", type: "Vacuna", date: date)
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

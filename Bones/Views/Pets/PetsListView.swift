@@ -13,9 +13,9 @@ import UIKit             // para UIImage en previews
 struct PetsListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Pet.name) private var pets: [Pet]   // alfabético
-    @AppStorage("didChooseDemoPet") private var didChooseDemoPet: Bool = false
-    @AppStorage("demoGuideStep") private var demoGuideStep: Int = 0
-    @AppStorage("didCompleteDemoGuide") private var didCompleteDemoGuide: Bool = false
+    @AppStorage(AppStorageKey.didChooseDemoPet)     private var didChooseDemoPet: Bool = false
+    @AppStorage(AppStorageKey.demoGuideStep)        private var demoGuideStep: Int = 0
+    @AppStorage(AppStorageKey.didCompleteDemoGuide) private var didCompleteDemoGuide: Bool = false
     
     @State private var isPresentingAdd = false
     @State private var petToEdit: Pet?   // nuevo state
@@ -282,36 +282,22 @@ struct PetsListView: View {
     private func nextEvent(for pet: Pet) -> Date? {
         let now = Date()
 
-        // 1. Medicamentos
-        let medDate = (try? context.fetch(
-            FetchDescriptor<Medication>(sortBy: [SortDescriptor(\Medication.date)])
-        ))?
-        .first { $0.pet?.id == pet.id && $0.date >= now }?
-        .date
-
-        // 2. Vacunas
+        // 1. Vacunas
         let vacDate = (try? context.fetch(
             FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\Vaccine.date)])
         ))?
         .first { $0.pet?.id == pet.id && $0.date >= now }?
         .date
 
-        // 3. Desparasitación
+        // 2. Desparasitación
         let dewDate = (try? context.fetch(
             FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\Deworming.date)])
         ))?
         .first { $0.pet?.id == pet.id && $0.date >= now }?
         .date
 
-        // 4. Grooming
-        let groDate = (try? context.fetch(
-            FetchDescriptor<Grooming>(sortBy: [SortDescriptor(\Grooming.date)])
-        ))?
-        .first { $0.pet?.id == pet.id && $0.date >= now }?
-        .date
-
         // Devuelve la fecha más cercana (mínima no-nula)
-        return [medDate, vacDate, dewDate, groDate]
+        return [vacDate, dewDate]
             .compactMap { $0 }
             .min()
     }
@@ -324,14 +310,26 @@ struct PetsListView: View {
     private func lastVaccine(for pet: Pet) -> Vaccine? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now }
+        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
     }
 
     private func lastDeworming(for pet: Pet) -> Deworming? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now }
+        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
     }
+}
+
+// MARK: - Solicitud de nuevo evento para sheets
+
+private struct QuickAddRequest: Identifiable {
+    let id = UUID()
+    let kind: EventKind
+}
+
+private struct DetailNavTarget: Identifiable, Hashable {
+    let id = UUID()
+    let tab: DetailTab
 }
 
 // MARK: - Dashboard para una sola mascota
@@ -341,9 +339,8 @@ private struct SinglePetDashboardView: View {
     let pet: Pet
     @Binding var demoGuideStep: Int
     @Binding var didCompleteDemoGuide: Bool
-    
-    @State private var showingQuickAdd = false
-    @State private var quickAddKind: EventKind = .medication
+
+    @State private var detailDestination: DetailNavTarget?
     @State private var isPresentingEdit = false
     @State private var showingDeleteAlert = false
     
@@ -356,23 +353,16 @@ private struct SinglePetDashboardView: View {
             VStack(spacing: 16) {
                 header
                 
-                // Fila 1: Peso actual (izq) + Próximo medicamento (der)
+                // Fila 1: Peso actual (izq) + Próxima vacuna (der)
                 LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
                     currentWeightCard
-                    nextMedicationCard
-                }
-                .padding(.horizontal)
-                
-                // Fila 2: Última vacuna (izq) + Próxima vacuna (der)
-                LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                    lastVaccineCard
                     nextVaccineCard
                 }
                 .padding(.horizontal)
-                
-                // Fila 3: Última desparasitación (izq) + Próxima desparasitación (der)
+
+                // Fila 2: Última vacuna (izq) + Próxima desparasitación (der)
                 LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                    lastDewormingCard
+                    lastVaccineCard
                     nextDewormingCard
                 }
                 .padding(.horizontal)
@@ -398,8 +388,8 @@ private struct SinglePetDashboardView: View {
             .padding(.vertical, 12)
             .demoGuideAnchor(.dashboardHeader)
         }
-        .sheet(isPresented: $showingQuickAdd) {
-            EventQuickAddSheet(pet: pet, initialKind: quickAddKind)
+        .navigationDestination(item: $detailDestination) { target in
+            PetDetailView(pet: pet, initialTab: target.tab)
         }
         .sheet(isPresented: $isPresentingEdit) {
             EditPetSheet(pet: pet)
@@ -411,32 +401,43 @@ private struct SinglePetDashboardView: View {
             Text("Esta acción no se puede deshacer.")
         }
     }
-    
+
     // Cabecera con foto + datos + acciones
     private var header: some View {
         HStack(alignment: .center, spacing: 16) {
-            // Foto
-            Group {
-                if let data = pet.photoData, let ui = UIImage(data: data) {
-                    Image(uiImage: ui)
-                        .resizable().scaledToFill()
-                } else {
-                    Image(systemName: "pawprint.fill")
-                        .resizable().scaledToFit()
-                        .foregroundStyle(.secondary)
-                        .padding(20)
+            // Foto — toca para ir a tab Próximos
+            NavigationLink {
+                PetDetailView(pet: pet, initialTab: .upcoming)
+            } label: {
+                Group {
+                    if let data = pet.photoData, let ui = UIImage(data: data) {
+                        Image(uiImage: ui)
+                            .resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "pawprint.fill")
+                            .resizable().scaledToFit()
+                            .foregroundStyle(.secondary)
+                            .padding(20)
+                    }
                 }
+                .frame(width: 96, height: 96)
+                .background(Color(.systemGray6))
+                .clipShape(Circle())
             }
-            .frame(width: 96, height: 96)
-            .background(Color(.systemGray6))
-            .clipShape(Circle())
-            
+            .buttonStyle(.plain)
+            .demoGuideAnchor(.detailButton)
+            .simultaneousGesture(TapGesture().onEnded {
+                if demoGuideStep == DemoGuideStep.detail.rawValue {
+                    demoGuideStep = DemoGuideStep.upcoming.rawValue
+                }
+            })
+
             // Datos básicos
             VStack(alignment: .leading, spacing: 4) {
                 Text(pet.name)
                     .font(.title2).bold()
                 HStack(spacing: 6) {
-                    Text(pet.sex.displayName)            // ← Español
+                    Text(pet.sex.displayName)
                     Text("·")
                     Text(pet.species.rawValue.capitalized)
                     if let breed = pet.breed, !breed.isEmpty {
@@ -446,59 +447,27 @@ private struct SinglePetDashboardView: View {
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                
+
                 if let age = ageString(for: pet.birthDate) {
                     Text(age)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
-                HStack(spacing: 8) {
-                    Button {
-                        isPresentingEdit = true
-                    } label: {
-                        Label("Editar", systemImage: "pencil")
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    NavigationLink {
-                        PetDetailView(pet: pet)
-                    } label: {
-                        Label("Ver detalle", systemImage: "chevron.right.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .demoGuideAnchor(.detailButton)
-                    .simultaneousGesture(TapGesture().onEnded {
-                        if demoGuideStep == DemoGuideStep.detail.rawValue {
-                            demoGuideStep = DemoGuideStep.upcoming.rawValue
-                        }
-                    })
+
+                Button {
+                    isPresentingEdit = true
+                } label: {
+                    Label("Editar", systemImage: "pencil")
                 }
+                .buttonStyle(.bordered)
                 .padding(.top, 4)
             }
-
         }
         .padding(.horizontal)
     }
     
     // MARK: - Tarjetas (nueva estructura)
-    
-    private var nextMedicationCard: some View {
-        let next = nextMedication()
-        return InfoCard(
-            icon: "pills.fill",
-            title: "Próximo medicamento",
-            primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
-            secondary: next?.name
-        )
-        .contextMenu {
-            Button("Añadir medicamento", systemImage: "plus") {
-                quickAddKind = .medication
-                showingQuickAdd = true
-            }
-        }
-    }
-    
+
     private var nextVaccineCard: some View {
         let next = nextVaccine()
         return InfoCard(
@@ -507,14 +476,12 @@ private struct SinglePetDashboardView: View {
             primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
             secondary: next?.vaccineName
         )
-        .contextMenu {
-            Button("Añadir vacuna", systemImage: "plus") {
-                quickAddKind = .vaccine
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .vaccines)
         }
     }
-    
+
     private var lastVaccineCard: some View {
         let last = lastVaccine()
         return InfoCard(
@@ -523,14 +490,12 @@ private struct SinglePetDashboardView: View {
             primary: last.map { formatDate($0.date) } ?? "Nunca",
             secondary: last.map { DoseSeries.splitDoseBase(from: $0.vaccineName) }
         )
-        .contextMenu {
-            Button("Añadir vacuna", systemImage: "plus") {
-                quickAddKind = .vaccine
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .vaccines)
         }
     }
-    
+
     private var nextDewormingCard: some View {
         let next = nextDeworming()
         return InfoCard(
@@ -539,15 +504,12 @@ private struct SinglePetDashboardView: View {
             primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
             secondary: next?.notes
         )
-        .contextMenu {
-            Button("Añadir desparasitación", systemImage: "plus") {
-                // Abrimos como medicamento (toggle dentro de la hoja)
-                quickAddKind = .medication
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .deworming)
         }
     }
-    
+
     private var lastDewormingCard: some View {
         let last = lastDeworming()
         return InfoCard(
@@ -556,8 +518,12 @@ private struct SinglePetDashboardView: View {
             primary: last.map { formatDateTime($0.date) } ?? "Nunca",
             secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .deworming)
+        }
     }
-    
+
     private var currentWeightCard: some View {
         let last = lastWeight()
         return InfoCard(
@@ -566,21 +532,13 @@ private struct SinglePetDashboardView: View {
             primary: last.map { String(format: "%.1f kg", $0.weightKg) } ?? "—",
             secondary: last.map { formatDate($0.date) }
         )
-        .contextMenu {
-            Button("Añadir peso", systemImage: "plus") {
-                quickAddKind = .weight
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .weight)
         }
     }
-    
+
     // MARK: - Fetch helpers SIN #Predicate (evita errores de macro)
-    private func nextMedication() -> Medication? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Medication>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date >= now && !$0.isCompleted }
-    }
-    
     private func nextVaccine() -> Vaccine? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
@@ -596,13 +554,13 @@ private struct SinglePetDashboardView: View {
     private func lastVaccine() -> Vaccine? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now }
+        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
     }
     
     private func lastDeworming() -> Deworming? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now }
+        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
     }
     
     private func lastWeight() -> WeightEntry? {
@@ -613,16 +571,12 @@ private struct SinglePetDashboardView: View {
     // MARK: - Delete
     private func deletePet() {
         // 1) Cancelar notificaciones de todos sus eventos
-        let meds = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
         let vacs = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
         let dews = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
-        let grooms = (try? context.fetch(FetchDescriptor<Grooming>())) ?? []
         let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
-        
-        for e in meds where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+
         for e in vacs where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
         for e in dews where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        for e in grooms where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
         for e in weights where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
         
         // 2) Eliminar la mascota (cascade borra relaciones)
@@ -641,35 +595,40 @@ private struct SinglePetDashboardView: View {
 private struct PetCarouselCard: View {
     @Environment(\.modelContext) private var context
     let pet: Pet
-    
-    @State private var showingQuickAdd = false
-    @State private var quickAddKind: EventKind = .medication
+
+    @State private var detailDestination: DetailNavTarget?
     @State private var isPresentingEdit = false
     @State private var showingDeleteAlert = false
-    
+
     // Dos columnas fijas para las filas
     private let twoCols = [ GridItem(.flexible(), spacing: 12),
                             GridItem(.flexible(), spacing: 12) ]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Cabecera (idéntica a la de 1 mascota, con acciones)
+            // Cabecera
             HStack(alignment: .center, spacing: 16) {
-                Group {
-                    if let data = pet.photoData, let ui = UIImage(data: data) {
-                        Image(uiImage: ui)
-                            .resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "pawprint.fill")
-                            .resizable().scaledToFit()
-                            .foregroundStyle(.secondary)
-                            .padding(20)
+                // Foto — toca para ir a tab Próximos
+                NavigationLink {
+                    PetDetailView(pet: pet, initialTab: .upcoming)
+                } label: {
+                    Group {
+                        if let data = pet.photoData, let ui = UIImage(data: data) {
+                            Image(uiImage: ui)
+                                .resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "pawprint.fill")
+                                .resizable().scaledToFit()
+                                .foregroundStyle(.secondary)
+                                .padding(20)
+                        }
                     }
+                    .frame(width: 96, height: 96)
+                    .background(Color(.systemGray6))
+                    .clipShape(Circle())
                 }
-                .frame(width: 96, height: 96)
-                .background(Color(.systemGray6))
-                .clipShape(Circle())
-                
+                .buttonStyle(.plain)
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pet.name)
                         .font(.title2).bold()
@@ -684,47 +643,32 @@ private struct PetCarouselCard: View {
                     }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    
+
                     if let age = ageString(for: pet.birthDate) {
                         Text(age)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    
-                    HStack(spacing: 8) {
-                        Button {
-                            isPresentingEdit = true
-                        } label: {
-                            Label("Editar", systemImage: "pencil")
-                        }
-                        .buttonStyle(.bordered)
-                        
-                        NavigationLink {
-                            PetDetailView(pet: pet)
-                        } label: {
-                            Label("Ver detalle", systemImage: "chevron.right.circle")
-                        }
-                        .buttonStyle(.bordered)
+
+                    Button {
+                        isPresentingEdit = true
+                    } label: {
+                        Label("Editar", systemImage: "pencil")
                     }
+                    .buttonStyle(.bordered)
                     .padding(.top, 4)
                 }
             }
             
-            // Fila 1: Peso actual (izq) + Próximo medicamento (der)
+            // Fila 1: Peso actual (izq) + Próxima vacuna (der)
             LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
                 currentWeightCard
-                nextMedicationCard
-            }
-            
-            // Fila 2: Última vacuna (izq) + Próxima vacuna (der)
-            LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                lastVaccineCard
                 nextVaccineCard
             }
-            
-            // Fila 3: Última desparasitación (izq) + Próxima desparasitación (der)
+
+            // Fila 2: Última vacuna (izq) + Próxima desparasitación (der)
             LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                lastDewormingCard
+                lastVaccineCard
                 nextDewormingCard
             }
             
@@ -759,8 +703,8 @@ private struct PetCarouselCard: View {
                 isPresentingEdit = true
             }
         }
-        .sheet(isPresented: $showingQuickAdd) {
-            EventQuickAddSheet(pet: pet, initialKind: quickAddKind)
+        .navigationDestination(item: $detailDestination) { target in
+            PetDetailView(pet: pet, initialTab: target.tab)
         }
         .sheet(isPresented: $isPresentingEdit) {
             EditPetSheet(pet: pet)
@@ -772,24 +716,8 @@ private struct PetCarouselCard: View {
             Text("Esta acción no se puede deshacer.")
         }
     }
-    
-    // MARK: - Tarjetas (idénticas a SinglePetDashboardView)
-    private var nextMedicationCard: some View {
-        let next = nextMedication()
-        return InfoCard(
-            icon: "pills.fill",
-            title: "Próximo medicamento",
-            primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
-            secondary: next?.name
-        )
-        .contextMenu {
-            Button("Añadir medicamento", systemImage: "plus") {
-                quickAddKind = .medication
-                showingQuickAdd = true
-            }
-        }
-    }
-    
+
+    // MARK: - Tarjetas
     private var nextVaccineCard: some View {
         let next = nextVaccine()
         return InfoCard(
@@ -798,14 +726,12 @@ private struct PetCarouselCard: View {
             primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
             secondary: next?.vaccineName
         )
-        .contextMenu {
-            Button("Añadir vacuna", systemImage: "plus") {
-                quickAddKind = .vaccine
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .vaccines)
         }
     }
-    
+
     private var lastVaccineCard: some View {
         let last = lastVaccine()
         return InfoCard(
@@ -814,14 +740,12 @@ private struct PetCarouselCard: View {
             primary: last?.date.formatted(date: .abbreviated, time: .omitted) ?? "Nunca",
             secondary: last.map { DoseSeries.splitDoseBase(from: $0.vaccineName) }
         )
-        .contextMenu {
-            Button("Añadir vacuna", systemImage: "plus") {
-                quickAddKind = .vaccine
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .vaccines)
         }
     }
-    
+
     private var nextDewormingCard: some View {
         let next = nextDeworming()
         return InfoCard(
@@ -830,14 +754,12 @@ private struct PetCarouselCard: View {
             primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
             secondary: next?.notes
         )
-        .contextMenu {
-            Button("Añadir desparasitación", systemImage: "plus") {
-                quickAddKind = .medication
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .deworming)
         }
     }
-    
+
     private var lastDewormingCard: some View {
         let last = lastDeworming()
         return InfoCard(
@@ -846,8 +768,12 @@ private struct PetCarouselCard: View {
             primary: last?.date.formatted(date: .abbreviated, time: .shortened) ?? "Nunca",
             secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .deworming)
+        }
     }
-    
+
     private var currentWeightCard: some View {
         let last = lastWeight()
         return InfoCard(
@@ -856,21 +782,13 @@ private struct PetCarouselCard: View {
             primary: last.map { String(format: "%.1f kg", $0.weightKg) } ?? "—",
             secondary: last.map { $0.date.formatted(date: .abbreviated, time: .omitted) }
         )
-        .contextMenu {
-            Button("Añadir peso", systemImage: "plus") {
-                quickAddKind = .weight
-                showingQuickAdd = true
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailDestination = DetailNavTarget(tab: .weight)
         }
     }
-    
+
     // MARK: - Fetch helpers (evita macro #Predicate)
-    private func nextMedication() -> Medication? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Medication>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date >= now && !$0.isCompleted }
-    }
-    
     private func nextVaccine() -> Vaccine? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
@@ -886,13 +804,13 @@ private struct PetCarouselCard: View {
     private func lastVaccine() -> Vaccine? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now }
+        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
     }
     
     private func lastDeworming() -> Deworming? {
         let now = Date()
         let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now }
+        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
     }
     
     private func lastWeight() -> WeightEntry? {
@@ -903,16 +821,12 @@ private struct PetCarouselCard: View {
     // MARK: - Delete
     private func deletePet() {
         // 1) Cancelar notificaciones de todos sus eventos
-        let meds = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
         let vacs = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
         let dews = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
-        let grooms = (try? context.fetch(FetchDescriptor<Grooming>())) ?? []
         let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
-        
-        for e in meds where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+
         for e in vacs where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
         for e in dews where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        for e in grooms where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
         for e in weights where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
         
         // 2) Eliminar la mascota (cascade borra relaciones)
@@ -1032,113 +946,20 @@ private struct PetDetailedCardView: View {
 }
 
 // Tarjeta simple reutilizable
-private struct InfoCard: View {
-    let icon: String
-    let title: String
-    let primary: String
-    let secondary: String?
-    
-    // Altura mínima unificada para todas las tarjetas
-    private let minHeight: CGFloat = 112
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: icon)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            
-            // Hasta 2 líneas para evitar crecimientos excesivos
-            Text(primary)
-                .font(.headline)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            // Reservamos espacio para la línea secundaria aunque no exista
-            Text(secondary ?? " ")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .opacity((secondary?.isEmpty ?? true) ? 0 : 1)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
-        )
-    }
-}
-
-// Helper de edad local a este archivo
-private func ageString(for birth: Date?) -> String? {
-    guard let birth else { return nil }
-    let comp = Calendar.current.dateComponents([.year, .month], from: birth, to: Date())
-    let y = comp.year ?? 0, m = comp.month ?? 0
-    switch (y, m) {
-    case (0, 0):  return "Recién nacido"
-    case (0, _):  return "\(m) mes\(m > 1 ? "es" : "")"
-    default:      return "\(y) año\(y > 1 ? "s" : "") \(m) m"
-    }
-}
-
-// MARK: - Localización auxiliar en este archivo
-
-private extension Sex {
-    var displayName: String {
-        switch self {
-        case .male:    return "Macho"
-        case .female:  return "Hembra"
-        case .unknown: return "Desconocido"
-        }
-    }
-}
-
-private let esRelativeFormatter: RelativeDateTimeFormatter = {
-    let f = RelativeDateTimeFormatter()
-    f.locale = Locale(identifier: "es")          // fuerza español
-    f.unitsStyle = .full
-    return f
-}()
-
-private let esDateFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "es")
-    f.dateStyle = .medium
-    f.timeStyle = .none
-    return f
-}()
-
-private let esDateTimeFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "es")
-    f.dateStyle = .medium
-    f.timeStyle = .short
-    return f
-}()
-
-private func formatDate(_ date: Date) -> String {
-    esDateFormatter.string(from: date)
-}
-
-private func formatDateTime(_ date: Date) -> String {
-    esDateTimeFormatter.string(from: date)
-}
-
 // MARK: - Previews
 
 private enum PetsListPreviewData {
     static func makeContainer() -> ModelContainer {
         let schema = Schema([
             Pet.self,
-            Medication.self,
             Vaccine.self,
             Deworming.self,
-            Grooming.self,
             WeightEntry.self
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: config)
     }
-    
+
     @discardableResult
     static func seedPets(count: Int, in container: ModelContainer, withEvents: Bool = true) -> [Pet] {
         let ctx = ModelContext(container)
@@ -1194,14 +1015,12 @@ private enum PetsListPreviewData {
                     )
                     ctx.insert(v)
                 case 1:
-                    let m = Medication(
+                    let d2 = Deworming(
                         date: now.addingTimeInterval(Double(1 + i) * 24 * 3600),
                         pet: pet,
-                        name: "Amoxicilina",
-                        dosage: "250 mg",
-                        frequency: "cada 8 h"
+                        notes: "Pipeta mensual"
                     )
-                    ctx.insert(m)
+                    ctx.insert(d2)
                 case 2:
                     let d = Deworming(
                         date: now.addingTimeInterval(Double(5 + i) * 24 * 3600),
@@ -1210,13 +1029,7 @@ private enum PetsListPreviewData {
                     )
                     ctx.insert(d)
                 default:
-                    let g = Grooming(
-                        date: now.addingTimeInterval(Double(3 + i) * 24 * 3600),
-                        pet: pet,
-                        location: "Pet Spa",
-                        notes: "Baño y corte"
-                    )
-                    ctx.insert(g)
+                    break
                 }
                 // Además, insertar eventos pasados para que “últimos” tenga sentido
                 let pastVac = Vaccine(date: now.addingTimeInterval(-20 * 24 * 3600),

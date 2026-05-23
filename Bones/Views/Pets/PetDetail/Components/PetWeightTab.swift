@@ -439,16 +439,14 @@ private enum WeightTabPreviewData {
     static func makeContainer() -> ModelContainer {
         let schema = Schema([
             Pet.self,
-            Medication.self,
             Vaccine.self,
             Deworming.self,
-            Grooming.self,
             WeightEntry.self
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: config)
     }
-    
+
     @discardableResult
     static func seedWeights(in container: ModelContainer) -> Pet {
         let ctx = ModelContext(container)

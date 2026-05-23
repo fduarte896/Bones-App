@@ -57,18 +57,6 @@ enum DoseSeries {
         (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
     
-    // Futuras del mismo medicamento (misma mascota, mismo "base", fecha >= actual)
-    static func futureMedications(from med: Medication, in context: ModelContext) -> [Medication] {
-        guard let petID = med.pet?.id else { return [med] }
-        let base = splitDoseBase(from: med.name)
-        let start = med.date
-        let predicate = #Predicate<Medication> { m in
-            m.pet?.id == petID && m.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
-        return fetched.filter { splitDoseBase(from: $0.name) == base }
-    }
-    
     // Futuras del mismo esquema de vacuna
     static func futureVaccines(from vac: Vaccine, in context: ModelContext) -> [Vaccine] {
         guard let petID = vac.pet?.id else { return [vac] }
@@ -120,4 +108,3 @@ enum DoseSeries {
         return related.isEmpty ? [dew] : related
     }
 }
-

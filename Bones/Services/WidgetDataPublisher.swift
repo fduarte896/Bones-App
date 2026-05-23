@@ -32,24 +32,15 @@ final class WidgetDataPublisher: ObservableObject {
 
         for pet in pets {
             let petID = pet.id
-            let meds: [Medication] = fetch(Medication.self,
-                                           predicate: #Predicate { !$0.isCompleted && $0.date >= now && $0.pet?.id == petID },
-                                           sort: .init(\.date, order: .forward))
             let vacs: [Vaccine] = fetch(Vaccine.self,
                                         predicate: #Predicate { !$0.isCompleted && $0.date >= now && $0.pet?.id == petID },
                                         sort: .init(\.date, order: .forward))
             let dews: [Deworming] = fetch(Deworming.self,
                                           predicate: #Predicate { !$0.isCompleted && $0.date >= now && $0.pet?.id == petID },
                                           sort: .init(\.date, order: .forward))
-            let grooms: [Grooming] = fetch(Grooming.self,
-                                           predicate: #Predicate { !$0.isCompleted && $0.date >= now && $0.pet?.id == petID },
-                                           sort: .init(\.date, order: .forward))
-
             var combined: [any BasicEvent] = []
-            combined.append(contentsOf: meds.map { $0 as any BasicEvent })
             combined.append(contentsOf: vacs.map { $0 as any BasicEvent })
             combined.append(contentsOf: dews.map { $0 as any BasicEvent })
-            combined.append(contentsOf: grooms.map { $0 as any BasicEvent })
 
             let sorted = combined.sorted { $0.date < $1.date }
             let summaries = sorted.prefix(WidgetConstants.maxEventsPerPet).map { event in

@@ -23,38 +23,93 @@ struct PetDetailView: View {
     @StateObject private var viewModel: PetDetailViewModel
     
     // Picker interno
-    @State private var selectedTab: DetailTab = .upcoming
+    @State private var selectedTab: DetailTab
 
     @State private var selectedItem: PhotosPickerItem?
     @State private var showingRemoveAlert = false
     @State private var isPresentingEdit = false
-    
+
     // Animación de la barra de tabs
     @Namespace private var tabNamespace
-    
-    // Estado del subsegmento de Salud (elevado desde PetHealthTab)
-    @State private var healthSegment: PetHealthTab.HealthSegment = .vaccines
 
-    @AppStorage("didSeedDewormingDemo") private var didSeedDewormingDemo: Bool = false
-    @AppStorage("didChooseDemoPet") private var didChooseDemoPet: Bool = false
-    @AppStorage("demoGuideStep") private var demoGuideStep: Int = 0
-    @AppStorage("didCompleteDemoGuide") private var didCompleteDemoGuide: Bool = false
+    @AppStorage(AppStorageKey.didSeedDewormingDemo)  private var didSeedDewormingDemo: Bool = false
+    @AppStorage(AppStorageKey.didChooseDemoPet)      private var didChooseDemoPet: Bool = false
+    @AppStorage(AppStorageKey.demoGuideStep)         private var demoGuideStep: Int = 0
+    @AppStorage(AppStorageKey.didCompleteDemoGuide)  private var didCompleteDemoGuide: Bool = false
 
-    // Inicializador para inyectar el ViewModel
-    init(pet: Pet) {
+    init(pet: Pet, initialTab: DetailTab = .upcoming) {
         self.pet = pet
-        // Break up the expression to help the type-checker
         let id: UUID = pet.id
         let vm = PetDetailViewModel(petID: id)
-        _viewModel = StateObject(wrappedValue: vm)   // aún sin contexto
+        _viewModel = StateObject(wrappedValue: vm)
+        _selectedTab = State(initialValue: initialTab)
     }
     
     var body: some View {
+        coreView
+            .overlayPreferenceValue(DemoGuideAnchorKey.self) { anchors in
+                GeometryReader { proxy in
+                    demoGuideOverlay(anchors: anchors, proxy: proxy)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var coreView: some View {
+        petStack
+            .alert("¿Eliminar foto?", isPresented: $showingRemoveAlert) {
+                Button("Eliminar", role: .destructive) {
+                    pet.photoData = nil
+                    try? context.save()
+                }
+                Button("Cancelar", role: .cancel) { }
+            }
+            .navigationTitle(pet.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        let initialKind: EventKind = {
+                            switch selectedTab {
+                            case .vaccines:  return .vaccine
+                            case .deworming: return .deworming
+                            case .weight:    return .weight
+                            case .upcoming:  return .vaccine
+                            }
+                        }()
+                        quickAddConfig = QuickAddConfig(kind: initialKind)
+                    } label: {
+                        Label("Nuevo evento", systemImage: "plus")
+                    }
+                }
+            }
+            .sheet(item: $quickAddConfig, onDismiss: { viewModel.fetchEvents() }) { config in
+                EventQuickAddSheet(pet: pet, initialKind: config.kind)
+                    .onAppear {
+                        print("[QuickAdd] Sheet onAppear with intent kind=\(config.kind)")
+                    }
+            }
+            .sheet(isPresented: $isPresentingEdit) {
+                EditPetSheet(pet: pet)
+            }
+            .onAppear {
+                viewModel.inject(context: context)
+                seedDewormingIfNeeded()
+            }
+            .onChange(of: selectedTab) { old, new in
+                print("[QuickAdd] selectedTab \(old) → \(new)")
+            }
+    }
+
+    @ViewBuilder
+    private var petStack: some View {
         VStack(spacing: 0) {
 
             // ---------- Cabecera ----------
             HStack(alignment: .top, spacing: 16) {
-                // Foto (círculo o rectángulo redondeado)
                 ZStack(alignment: .bottomTrailing) {
                     Group {
                         if let data = pet.photoData,
@@ -70,11 +125,10 @@ struct PetDetailView: View {
                                 .padding(20)
                         }
                     }
-                    .frame(width: 120, height: 120)        // tamaño fijo
-                    .clipShape(Circle())                   // cambia a RoundedRectangle si prefieres
-                    .contentShape(Rectangle())             // para gestos
-                    
-                    // Botón editar
+                    .frame(width: 120, height: 120)
+                    .clipShape(Circle())
+                    .contentShape(Rectangle())
+
                     PhotosPicker(selection: $selectedItem,
                                  matching: .images,
                                  photoLibrary: .shared()) {
@@ -86,8 +140,7 @@ struct PetDetailView: View {
                     }
                     .onLongPressGesture { showingRemoveAlert = true }
                 }
-                
-                // Datos a la derecha
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pet.name)
                         .font(.title2).bold()
@@ -100,11 +153,11 @@ struct PetDetailView: View {
                     }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    
+
                     Text("\(pet.species.rawValue.capitalized) · \(pet.breed ?? "Sin raza")")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    
+
                     if let color = pet.color, !color.isEmpty {
                         Text("Color: \(color)")
                             .font(.caption)
@@ -117,53 +170,24 @@ struct PetDetailView: View {
             .padding(.top, 8)
             .padding(.bottom, 16)
 
-            
-            // ---------- Picker de tabs (chips ancho completo + animación) ----------
+            // ---------- Picker de tabs ----------
             HStack(spacing: 8) {
                 ForEach(DetailTab.allCases, id: \.self) { tab in
-                    Button {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85, blendDuration: 0.2)) {
-                            selectedTab = tab
-                        }
-                    } label: {
-                        Text(tab.title)
-                            .font(.subheadline)
-                            .minimumScaleFactor(0.85)
-                            .lineLimit(1)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .foregroundStyle(selectedTab == tab ? .white : .primary)
-                            .background(
-                                ZStack {
-                                    // Fondo base
-                                    Capsule()
-                                        .fill(Color(.systemGray5))
-                                    // Fondo seleccionado animado
-                                    if selectedTab == tab {
-                                        Capsule()
-                                            .fill(Color.accentColor)
-                                            .matchedGeometryEffect(id: "tabSelection", in: tabNamespace)
-                                    }
-                                }
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .demoGuideAnchor(guideAnchor(for: tab))
+                    tabButton(for: tab)
                 }
             }
             .padding(.horizontal)
             .padding(.bottom, 6)
 
-            
             // ---------- Contenido ----------
             Group {
                 switch selectedTab {
                 case .upcoming:
                     PetUpcomingEventsTab(viewModel: viewModel)
-                case .health:
-                    PetHealthTab(viewModel: viewModel, segment: $healthSegment)   // Vacunas + Desparasitación + Medicamentos
-                case .grooming:
-                    PetGroomingTab(viewModel: viewModel)
+                case .vaccines:
+                    PetVaccinesTab(viewModel: viewModel)
+                case .deworming:
+                    PetDewormingTab(viewModel: viewModel)
                 case .weight:
                     PetWeightTab(pet: pet, viewModel: viewModel)
                 }
@@ -177,7 +201,7 @@ struct PetDetailView: View {
                     if let data = try await item.loadTransferable(type: Data.self) {
                         pet.photoData = data
                         try? context.save()
-                        selectedItem = nil           // ← resetea para permitir nueva selección
+                        selectedItem = nil
                     }
                 } catch {
                     print("Photo load failed: \(error)")
@@ -193,161 +217,107 @@ struct PetDetailView: View {
         .onChange(of: selectedTab) { _, newTab in
             guard shouldShowDemoGuideInDetail else { return }
             switch newTab {
-            case .health:
+            case .vaccines:
                 if demoGuideStep == DemoGuideStep.upcoming.rawValue {
                     demoGuideStep = DemoGuideStep.health.rawValue
                 }
-            case .grooming:
-                if demoGuideStep == DemoGuideStep.health.rawValue {
-                    demoGuideStep = DemoGuideStep.grooming.rawValue
-                }
             case .weight:
-                if demoGuideStep == DemoGuideStep.grooming.rawValue {
+                if demoGuideStep == DemoGuideStep.health.rawValue {
                     demoGuideStep = DemoGuideStep.weight.rawValue
                 }
-            case .upcoming:
+            default:
                 break
             }
         }
+    }
 
-        .alert("¿Eliminar foto?", isPresented: $showingRemoveAlert) {
-            Button("Eliminar", role: .destructive) {
-                pet.photoData = nil
-                try? context.save()
-            }
-            Button("Cancelar", role: .cancel) { }
-        }
-
-        .navigationTitle(pet.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button("Editar", systemImage: "pencil") { isPresentingEdit = true }
-            }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    // Decidir initialKind y isDewormingInitial según la ubicación actual
-                    let (initialKind, isDewormingInitial): (EventKind, Bool) = {
-                        if selectedTab == .health {
-                            switch healthSegment {
-                            case .vaccines:
-                                return (.vaccine, false)
-                            case .deworm:
-                                return (.medication, true)
-                            case .medications:
-                                return (.medication, false)
-                            }
-                        } else {
-                            // Fallback a comportamiento anterior por pestaña general
-                            switch selectedTab {
-                            case .grooming: return (.grooming, false)
-                            case .weight:   return (.weight, false)
-                            case .health, .upcoming:
-                                return (.medication, false)
-                            }
-                        }
-                    }()
-                    // DEBUG: log de intención calculada
-                    print("[QuickAdd] Intent from tab=\(selectedTab) segment=\(healthSegment) → kind=\(initialKind) deworm=\(isDewormingInitial)")
-                    // Abrimos la hoja con un item identificable (evita condiciones de carrera)
-                    quickAddConfig = QuickAddConfig(kind: initialKind, isDeworming: isDewormingInitial)
-                } label: {
-                    Label("Nuevo evento", systemImage: "plus")
+    @ViewBuilder
+    private func demoGuideOverlay(anchors: [DemoGuideAnchor: Anchor<CGRect>], proxy: GeometryProxy) -> some View {
+        if shouldShowDemoGuideInDetail,
+           let step = DemoGuideStep(rawValue: demoGuideStep) {
+            switch step {
+            case .upcoming:
+                if let anchor = anchors[.tabUpcoming] {
+                    DemoGuideOverlay(
+                        targetRect: proxy[anchor],
+                        title: "Próximos",
+                        message: "Aquí aparecen eventos cercanos y vencidos.",
+                        primaryActionTitle: "Siguiente",
+                        onPrimaryAction: {
+                            selectedTab = .vaccines
+                            demoGuideStep = DemoGuideStep.health.rawValue
+                        },
+                        onSkip: skipDemoGuide,
+                        presentationStyle: .centered
+                    )
                 }
-            }
-        }
-        .sheet(item: $quickAddConfig, onDismiss: {
-            viewModel.fetchEvents()          // refresca la lista al volver
-        }) { config in
-            EventQuickAddSheet(pet: pet,
-                               initialKind: config.kind,
-                               isDewormingInitial: config.isDeworming)
-            .onAppear {
-                print("[QuickAdd] Sheet onAppear with intent kind=\(config.kind) deworm=\(config.isDeworming)")
-            }
-        }
-        .sheet(isPresented: $isPresentingEdit) {
-            EditPetSheet(pet: pet)
-        }
-
-        // Inyectamos el context real en el ViewModel al aparecer y sembramos demo si es necesario
-        .onAppear {
-            viewModel.inject(context: context)
-            seedDewormingIfNeeded()
-        }
-        // DEBUG: trazas de navegación entre tabs/subtabs
-        .onChange(of: selectedTab) { old, new in
-            print("[QuickAdd] selectedTab \(old) → \(new)")
-        }
-        .onChange(of: healthSegment) { old, new in
-            print("[QuickAdd] healthSegment \(old) → \(new)")
-        }
-        .overlayPreferenceValue(DemoGuideAnchorKey.self) { anchors in
-            GeometryReader { proxy in
-                if shouldShowDemoGuideInDetail,
-                   let step = DemoGuideStep(rawValue: demoGuideStep) {
-                    switch step {
-                    case .upcoming:
-                        if let anchor = anchors[.tabUpcoming] {
-                            DemoGuideOverlay(
-                                targetRect: proxy[anchor],
-                                title: "Próximos",
-                                message: "Aquí aparecen eventos cercanos y vencidos.",
-                                primaryActionTitle: "Siguiente",
-                                onPrimaryAction: {
-                                    selectedTab = .health
-                                    demoGuideStep = DemoGuideStep.health.rawValue
-                                },
-                                onSkip: skipDemoGuide,
-                                presentationStyle: .centered
-                            )
-                        }
-                    case .health:
-                        if let anchor = anchors[.tabHealth] {
-                            DemoGuideOverlay(
-                                targetRect: proxy[anchor],
-                                title: "Salud",
-                                message: "Vacunas y medicamentos organizados en un solo lugar.",
-                                primaryActionTitle: "Siguiente",
-                                onPrimaryAction: {
-                                    selectedTab = .grooming
-                                    demoGuideStep = DemoGuideStep.grooming.rawValue
-                                },
-                                onSkip: skipDemoGuide,
-                                presentationStyle: .centered
-                            )
-                        }
-                    case .grooming:
-                        if let anchor = anchors[.tabGrooming] {
-                            DemoGuideOverlay(
-                                targetRect: proxy[anchor],
-                                title: "Peluquería",
-                                message: "Registra grooming y próximos cuidados.",
-                                primaryActionTitle: "Siguiente",
-                                onPrimaryAction: {
-                                    selectedTab = .weight
-                                    demoGuideStep = DemoGuideStep.weight.rawValue
-                                },
-                                onSkip: skipDemoGuide,
-                                presentationStyle: .centered
-                            )
-                        }
-                    case .weight:
-                        if let anchor = anchors[.tabWeight] {
-                            DemoGuideOverlay(
-                                targetRect: proxy[anchor],
-                                title: "Peso",
-                                message: "Historial y evolución del peso de tu mascota.",
-                                primaryActionTitle: "Finalizar",
-                                onPrimaryAction: finishDemoGuide,
-                                onSkip: skipDemoGuide,
-                                presentationStyle: .centered
-                            )
-                        }
-                    default:
-                        EmptyView()
-                    }
+            case .health:
+                if let anchor = anchors[.tabVaccines] {
+                    DemoGuideOverlay(
+                        targetRect: proxy[anchor],
+                        title: "Vacunas",
+                        message: "Historial de vacunas y próximas dosis de tu mascota.",
+                        primaryActionTitle: "Siguiente",
+                        onPrimaryAction: {
+                            selectedTab = .weight
+                            demoGuideStep = DemoGuideStep.weight.rawValue
+                        },
+                        onSkip: skipDemoGuide,
+                        presentationStyle: .centered
+                    )
                 }
+            case .weight:
+                if let anchor = anchors[.tabWeight] {
+                    DemoGuideOverlay(
+                        targetRect: proxy[anchor],
+                        title: "Peso",
+                        message: "Historial y evolución del peso de tu mascota.",
+                        primaryActionTitle: "Finalizar",
+                        onPrimaryAction: finishDemoGuide,
+                        onSkip: skipDemoGuide,
+                        presentationStyle: .centered
+                    )
+                }
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tabButton(for tab: DetailTab) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.85, blendDuration: 0.2)) {
+                selectedTab = tab
+            }
+        } label: {
+            tabButtonLabel(for: tab)
+        }
+        .buttonStyle(.plain)
+        .demoGuideAnchor(guideAnchor(for: tab))
+    }
+
+    @ViewBuilder
+    private func tabButtonLabel(for tab: DetailTab) -> some View {
+        let isSelected = selectedTab == tab
+        Text(tab.title)
+            .font(.subheadline)
+            .minimumScaleFactor(0.85)
+            .lineLimit(1)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .background(tabBackground(isSelected: isSelected))
+    }
+
+    @ViewBuilder
+    private func tabBackground(isSelected: Bool) -> some View {
+        ZStack {
+            Capsule().fill(Color(.systemGray5))
+            if isSelected {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .matchedGeometryEffect(id: "tabSelection", in: tabNamespace)
             }
         }
     }
@@ -358,10 +328,10 @@ struct PetDetailView: View {
 
     private func guideAnchor(for tab: DetailTab) -> DemoGuideAnchor {
         switch tab {
-        case .upcoming: return .tabUpcoming
-        case .health: return .tabHealth
-        case .grooming: return .tabGrooming
-        case .weight: return .tabWeight
+        case .upcoming:   return .tabUpcoming
+        case .vaccines:   return .tabVaccines
+        case .deworming:  return .tabDeworming
+        case .weight:     return .tabWeight
         }
     }
 
@@ -378,7 +348,6 @@ struct PetDetailView: View {
     struct QuickAddConfig: Identifiable, Equatable {
         let id = UUID()
         let kind: EventKind
-        let isDeworming: Bool
     }
     @State private var quickAddConfig: QuickAddConfig?
 }
@@ -482,14 +451,14 @@ private extension PetDetailView {
 
 // MARK: - Enum de tabs
 enum DetailTab: CaseIterable {
-    case upcoming, health, grooming, weight
-    
+    case upcoming, vaccines, deworming, weight
+
     var title: String {
         switch self {
-        case .upcoming:     return "Próximos"
-        case .health:       return "Salud"
-        case .grooming:     return "Peluquería"
-        case .weight:       return "Peso"
+        case .upcoming:   return "Próximos"
+        case .vaccines:   return "Vacunas"
+        case .deworming:  return "Parásitos"
+        case .weight:     return "Peso"
         }
     }
 }
@@ -497,22 +466,11 @@ enum DetailTab: CaseIterable {
 extension DetailTab {
     var defaultEventKind: EventKind {
         switch self {
-        case .health:       return .vaccine       // Quick Add desde Salud: por defecto vacuna
-        case .grooming:     return .grooming
-        case .weight:       return .weight
-        default:            return .medication   // Upcoming u otra
+        case .vaccines:   return .vaccine
+        case .deworming:  return .deworming
+        case .weight:     return .weight
+        case .upcoming:   return .vaccine
         }
-    }
-}
-
-private func ageString(for birth: Date?) -> String? {
-    guard let birth else { return nil }
-    let comp = Calendar.current.dateComponents([.year, .month], from: birth, to: Date())
-    let y = comp.year ?? 0, m = comp.month ?? 0
-    switch (y, m) {
-    case (0, 0):  return "Recién nacido"
-    case (0, _):  return "\(m) mes\(m > 1 ? "es" : "")"
-    default:      return "\(y) año\(y > 1 ? "s" : "") \(m) m"
     }
 }
 
@@ -522,10 +480,8 @@ private func ageString(for birth: Date?) -> String? {
     // 1) Container en memoria con el esquema necesario
     let schema = Schema([
         Pet.self,
-        Medication.self,
         Vaccine.self,
         Deworming.self,
-        Grooming.self,
         WeightEntry.self
     ])
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -657,10 +613,8 @@ private enum PetDetailDemoGuidePreviewData {
     static func makeContainerAndPet() -> (ModelContainer, Pet) {
         let schema = Schema([
             Pet.self,
-            Medication.self,
             Vaccine.self,
             Deworming.self,
-            Grooming.self,
             WeightEntry.self
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -704,16 +658,6 @@ private enum PetDetailDemoGuidePreviewData {
 #Preview("Demo Guide – Salud") {
     let (container, pet) = PetDetailDemoGuidePreviewData.makeContainerAndPet()
     PetDetailDemoGuidePreviewData.setGuide(step: .health)
-    return NavigationStack {
-        PetDetailView(pet: pet)
-    }
-    .modelContainer(container)
-    .environment(\.locale, Locale(identifier: "es"))
-}
-
-#Preview("Demo Guide – Peluquería") {
-    let (container, pet) = PetDetailDemoGuidePreviewData.makeContainerAndPet()
-    PetDetailDemoGuidePreviewData.setGuide(step: .grooming)
     return NavigationStack {
         PetDetailView(pet: pet)
     }

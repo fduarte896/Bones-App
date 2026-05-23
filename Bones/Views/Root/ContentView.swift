@@ -11,12 +11,12 @@ import SwiftData
 struct ContentView: View {
     @State private var selection: Tab = .pets
     @Environment(\.modelContext) private var context
-    @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding: Bool = false
+    @AppStorage(AppStorageKey.didCompleteOnboarding) private var didCompleteOnboarding: Bool = false
     @Query(sort: \Pet.name) private var pets: [Pet]
     @State private var showOnboarding = false
-    @AppStorage("eventsDeepLinkPetID") private var eventsDeepLinkPetID: String = ""
-    @AppStorage("eventsDeepLinkPetName") private var eventsDeepLinkPetName: String = ""
-    @AppStorage("eventsDeepLinkAction") private var eventsDeepLinkAction: String = ""
+    @AppStorage(AppStorageKey.eventsDeepLinkPetID)   private var eventsDeepLinkPetID: String = ""
+    @AppStorage(AppStorageKey.eventsDeepLinkPetName) private var eventsDeepLinkPetName: String = ""
+    @AppStorage(AppStorageKey.eventsDeepLinkAction)  private var eventsDeepLinkAction: String = ""
 
     enum Tab { case pets, events, settings }
 

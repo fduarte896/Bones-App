@@ -22,9 +22,9 @@ struct EventsListView: View {
     @State private var showNoPetsAlert = false
     @State private var showingAddPet = false
 
-    @AppStorage("eventsDeepLinkPetID") private var eventsDeepLinkPetID: String = ""
-    @AppStorage("eventsDeepLinkPetName") private var eventsDeepLinkPetName: String = ""
-    @AppStorage("eventsDeepLinkAction") private var eventsDeepLinkAction: String = ""
+    @AppStorage(AppStorageKey.eventsDeepLinkPetID)   private var eventsDeepLinkPetID: String = ""
+    @AppStorage(AppStorageKey.eventsDeepLinkPetName) private var eventsDeepLinkPetName: String = ""
+    @AppStorage(AppStorageKey.eventsDeepLinkAction)  private var eventsDeepLinkAction: String = ""
 
     // 4. Estados para borrado con confirmación (a nivel padre)
     @State private var pendingDeleteEvent: (any BasicEvent)?
@@ -213,12 +213,10 @@ struct EventsListView: View {
         // Calcula futuras según el tipo
         let count: Int
         switch event {
-        case let med as Medication:
-            count = max(0, futureMedications(from: med).count - 1)
         case let vac as Vaccine:
-            count = max(0, futureVaccines(from: vac).count - 1)
+            count = max(0, DoseSeries.futureVaccines(from: vac, in: context).count - 1)
         case let dew as Deworming:
-            count = max(0, futureDewormings(from: dew).count - 1)
+            count = max(0, DoseSeries.futureDewormings(from: dew, in: context).count - 1)
         default:
             // Otros tipos: borrar directo
             vm.delete(event)
@@ -237,20 +235,14 @@ struct EventsListView: View {
     private func deleteThisAndFuture() {
         guard let e = pendingDeleteEvent else { return }
         switch e {
-        case let med as Medication:
-            for m in futureMedications(from: med) {
-                NotificationManager.shared.cancelNotification(id: m.id)
-                context.delete(m)
-            }
-            try? context.save()
         case let vac as Vaccine:
-            for v in futureVaccines(from: vac) {
+            for v in DoseSeries.futureVaccines(from: vac, in: context) {
                 NotificationManager.shared.cancelNotification(id: v.id)
                 context.delete(v)
             }
             try? context.save()
         case let dew as Deworming:
-            for d in futureDewormings(from: dew) {
+            for d in DoseSeries.futureDewormings(from: dew, in: context) {
                 NotificationManager.shared.cancelNotification(id: d.id)
                 context.delete(d)
             }
@@ -269,54 +261,7 @@ struct EventsListView: View {
         showingDeleteDialog = false
     }
     
-    // MARK: - Búsqueda de dosis futuras relacionadas (usa el context del padre)
-    private func futureMedications(from med: Medication) -> [Medication] {
-        guard let petID = med.pet?.id else { return [med] }
-        let base = DoseSeries.splitDoseBase(from: med.name)
-        let start = med.date
-        let predicate = #Predicate<Medication> { m in
-            m.pet?.id == petID && m.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Medication>(predicate: predicate))) ?? []
-        return fetched.filter { DoseSeries.splitDoseBase(from: $0.name) == base }
-    }
-    
-    private func futureVaccines(from vac: Vaccine) -> [Vaccine] {
-        guard let petID = vac.pet?.id else { return [vac] }
-        let base = DoseSeries.splitDoseBase(from: vac.vaccineName)
-        let start = vac.date
-        let predicate = #Predicate<Vaccine> { v in
-            v.pet?.id == petID && v.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Vaccine>(predicate: predicate))) ?? []
-        return fetched.filter { DoseSeries.splitDoseBase(from: $0.vaccineName) == base }
-    }
-    
-    private func futureDewormings(from dew: Deworming) -> [Deworming] {
-        guard let petID = dew.pet?.id else { return [dew] }
-        let start = dew.date
-        
-        // Si hay seriesID, úsalo (recurrencias RRULE comparten seriesID)
-        if let sid = dew.seriesID {
-            let predicate = #Predicate<Deworming> { d in
-                d.pet?.id == petID && d.date >= start && d.seriesID == sid
-            }
-            let fetched = (try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))) ?? []
-            // Asegura orden ascendente por fecha
-            return fetched.sorted { $0.date < $1.date }
-        }
-        
-        // Fallback: agrupar por notas normalizadas (para series manuales antiguas)
-        func norm(_ s: String?) -> String {
-            (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        }
-        let baseNotes = norm(dew.notes)
-        let predicate = #Predicate<Deworming> { d in
-            d.pet?.id == petID && d.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Deworming>(predicate: predicate))) ?? []
-        return fetched.filter { norm($0.notes) == baseNotes }.sorted { $0.date < $1.date }
-    }
+
     
 }
 
@@ -367,10 +312,8 @@ private struct EventRow: View {
     
     private var icon: String {
         switch event {
-        case is Medication:   "pills.fill"
         case is Vaccine:      "syringe"
         case is Deworming:    "ladybug.fill"
-        case is Grooming:     "scissors"
         case is WeightEntry:  "scalemass"
         default:              "bell"
         }
@@ -378,10 +321,8 @@ private struct EventRow: View {
     
     private var tint: Color {
         switch event {
-        case is Medication:  return .blue
         case is Vaccine:     return .green
         case is Deworming:   return .orange
-        case is Grooming:    return .teal
         case is WeightEntry: return .gray
         default:             return .secondary
         }
@@ -533,47 +474,9 @@ private extension EventTypeFilter {
     var icon: String {
         switch self {
         case .all:         "circle.dashed"
-        case .medication:  "pills"
         case .vaccine:     "syringe"
-        case .grooming:    "scissors"
         case .weight:      "scalemass"
         }
-    }
-}
-
-enum PastSectionKind: Int, CaseIterable, Hashable {
-    case yesterday = 0, lastWeek, lastMonth, earlier
-    
-    var label: String {
-        switch self {
-        case .yesterday:  return "Ayer"
-        case .lastWeek:   return "Última semana"
-        case .lastMonth:  return "Último mes"
-        case .earlier:    return "Más antiguos"
-        }
-    }
-}
-
-extension Calendar {
-    /// Clasifica una fecha pasada en Ayer, Última semana, Último mes, Más antiguos.
-    func pastSectionKind(for date: Date) -> PastSectionKind {
-        if isDateInYesterday(date) { return .yesterday }
-        
-        let now = Date.now
-        
-        // Hace 7 días
-        if let weekAgo = self.date(byAdding: .day, value: -7, to: now),
-           date >= weekAgo {
-            return .lastWeek
-        }
-        
-        // Hace 1 mes
-        if let monthAgo = self.date(byAdding: .month, value: -1, to: now),
-           date >= monthAgo {
-            return .lastMonth
-        }
-        
-        return .earlier
     }
 }
 
@@ -624,11 +527,9 @@ private enum PreviewData {
     static func makeContainer() -> ModelContainer {
         let schema = Schema([
             Pet.self,
-            Medication.self,
             Vaccine.self,
             Deworming.self,
-            WeightEntry.self,
-            Grooming.self
+            WeightEntry.self
         ] as [any PersistentModel.Type])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: config)
@@ -647,47 +548,12 @@ private enum PreviewData {
         let now = Date.now
         
         // Helpers de fechas futuras
-        let in1h = now.addingTimeInterval(3600)
-        let in9h = now.addingTimeInterval(9 * 3600)
-        let in17h = now.addingTimeInterval(17 * 3600)
-        let in25h = now.addingTimeInterval(25 * 3600)
-        let in33h = now.addingTimeInterval(33 * 3600)
         let tomorrow = cal.date(byAdding: .day, value: 1, to: now)!
         let nextWeek = cal.date(byAdding: .day, value: 7, to: now)!
         let threeWeeks = cal.date(byAdding: .day, value: 21, to: now)!
         let sixWeeks = cal.date(byAdding: .day, value: 42, to: now)!
         let nextWeekPlus2 = cal.date(byAdding: .day, value: 9, to: now)! // 7 + 2
         let twoMonths = cal.date(byAdding: .month, value: 2, to: now)!
-        
-        // MEDICAMENTOS
-        // 1) Unidosis (solo esta cita)
-        let medSingle = Medication(date: tomorrow.addingTimeInterval(2 * 3600),
-                                   pet: loki,
-                                   name: "Omeprazol",
-                                   dosage: "10 mg",
-                                   frequency: "cada día")
-        
-        // 2) Multidosis (serie manual con sufijo " (dosis X/Y)")
-        let med1 = Medication(date: in1h, pet: loki,
-                              name: "Amoxicilina (dosis 1/5)",
-                              dosage: "250 mg",
-                              frequency: "cada 8 h")
-        let med2 = Medication(date: in9h, pet: loki,
-                              name: "Amoxicilina (dosis 2/5)",
-                              dosage: "250 mg",
-                              frequency: "cada 8 h")
-        let med3 = Medication(date: in17h, pet: loki,
-                              name: "Amoxicilina (dosis 3/5)",
-                              dosage: "250 mg",
-                              frequency: "cada 8 h")
-        let med4 = Medication(date: in25h, pet: loki,
-                              name: "Amoxicilina (dosis 4/5)",
-                              dosage: "250 mg",
-                              frequency: "cada 8 h")
-        let med5 = Medication(date: in33h, pet: loki,
-                              name: "Amoxicilina (dosis 5/5)",
-                              dosage: "250 mg",
-                              frequency: "cada 8 h")
         
         // VACUNAS
         // 1) Unidosis
@@ -709,17 +575,10 @@ private enum PreviewData {
         let dewFuture1 = Deworming(date: nextWeekPlus2, pet: loki, notes: "Tableta mensual")
         let dewFuture2 = Deworming(date: twoMonths, pet: loki, notes: "Tableta mensual")
         
-        // GROOMING – cita próxima
-        let groom = Grooming(date: nextWeekPlus2, pet: mishi,
-                             location: "Pet Spa", notes: "Baño y corte")
-        
         // Insertar todo
-        ctx.insert(medSingle)
-        ctx.insert(med1); ctx.insert(med2); ctx.insert(med3); ctx.insert(med4); ctx.insert(med5)
         ctx.insert(vacSingle)
         ctx.insert(vacA); ctx.insert(vacB); ctx.insert(vacC)
         ctx.insert(dewFuture1); ctx.insert(dewFuture2)
-        ctx.insert(groom)
         
         try? ctx.save()
     }
@@ -742,10 +601,6 @@ private enum PreviewData {
             return cal.date(from: comps) ?? base
         }
         
-        // Vencidos de HOY (más temprano)
-        let todayEarly = now.addingTimeInterval(-2 * 3600) // hace 2 horas
-        let medTodayPast = Medication(date: todayEarly, pet: loki, name: "Omeprazol", dosage: "10 mg", frequency: "cada día")
-        
         // Ayer
         let yesterdayBase = cal.date(byAdding: .day, value: -1, to: now)!
         let yesterday10am = at(hour: 10, minute: 0, on: yesterdayBase)
@@ -757,34 +612,28 @@ private enum PreviewData {
         
         // Último mes (entre 7 días y 1 mes)
         let twentyDaysAgo = cal.date(byAdding: .day, value: -20, to: now)!
-        let groomLastMonth = Grooming(date: at(hour: 16, minute: 0, on: twentyDaysAgo), pet: mishi, location: "Pet Spa", notes: "Corte y baño")
+        let weightLastMonth = WeightEntry(date: at(hour: 16, minute: 0, on: twentyDaysAgo), pet: mishi, weightKg: 4.2)
         
         // Más antiguos (más de 1 mes)
         let fiftyDaysAgo = cal.date(byAdding: .day, value: -50, to: now)!
         let weightOlder = WeightEntry(date: at(hour: 8, minute: 15, on: fiftyDaysAgo), pet: loki, weightKg: 22.4, notes: "Control general")
         
         // Futuros: mañana, próxima semana, próximo mes
-        let tomorrow = cal.date(byAdding: .day, value: 1, to: now)!
         let nextWeek = cal.date(byAdding: .day, value: 7, to: now)!
         let nextMonth = cal.date(byAdding: .month, value: 1, to: now)!
-        
-        let medTomorrow = Medication(date: at(hour: 19, minute: 0, on: tomorrow), pet: loki, name: "Amoxicilina (dosis 1/3)", dosage: "250 mg", frequency: "cada 8 h")
-        let medTomorrow2 = Medication(date: at(hour: 3, minute: 0, on: cal.date(byAdding: .day, value: 1, to: tomorrow)!), pet: loki, name: "Amoxicilina (dosis 2/3)", dosage: "250 mg", frequency: "cada 8 h")
+
         let vacNextWeek = Vaccine(date: at(hour: 9, minute: 0, on: nextWeek), pet: mishi, vaccineName: "Moquillo (dosis 1/3)", manufacturer: "PetCare")
         let dewNextMonth = Deworming(date: at(hour: 11, minute: 30, on: nextMonth), pet: loki, notes: "Tableta mensual")
         
         // Marcar algunos pasados como completados para cubrir ambos casos en “Pasados”
         vacYesterday.isCompleted = true
-        groomLastMonth.isCompleted = true
+        weightLastMonth.isCompleted = true
         
         // Insertar
-        ctx.insert(medTodayPast)
         ctx.insert(vacYesterday)
         ctx.insert(dewLastWeek)
-        ctx.insert(groomLastMonth)
+        ctx.insert(weightLastMonth)
         ctx.insert(weightOlder)
-        ctx.insert(medTomorrow)
-        ctx.insert(medTomorrow2)
         ctx.insert(vacNextWeek)
         ctx.insert(dewNextMonth)
         

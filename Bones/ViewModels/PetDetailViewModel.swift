@@ -27,13 +27,6 @@ final class PetDetailViewModel: ObservableObject {
         fetchEvents()
     }
     
-    // 1️⃣  Estructura auxiliar
-    struct EventSection: Identifiable {
-        let id = UUID()
-        let title: String
-        let items: [any BasicEvent]
-    }
-
     // 2️⃣  Propiedad publicada
     @Published var groupedUpcomingEvents: [EventSection] = []
 
@@ -41,39 +34,7 @@ final class PetDetailViewModel: ObservableObject {
     func fetchEvents() {
         guard let context else { return }
 
-        // Fetch por tipo con #Predicate concreto (evita genérico sobre protocolo)
-        let meds: [Medication] = {
-            let predicate = #Predicate<Medication> { $0.pet?.id == petID }
-            let desc = FetchDescriptor<Medication>(predicate: predicate)
-            return (try? context.fetch(desc)) ?? []
-        }()
-        let vacs: [Vaccine] = {
-            let predicate = #Predicate<Vaccine> { $0.pet?.id == petID }
-            let desc = FetchDescriptor<Vaccine>(predicate: predicate)
-            return (try? context.fetch(desc)) ?? []
-        }()
-        let dews: [Deworming] = {
-            let predicate = #Predicate<Deworming> { $0.pet?.id == petID }
-            let desc = FetchDescriptor<Deworming>(predicate: predicate)
-            return (try? context.fetch(desc)) ?? []
-        }()
-        let grooms: [Grooming] = {
-            let predicate = #Predicate<Grooming> { $0.pet?.id == petID }
-            let desc = FetchDescriptor<Grooming>(predicate: predicate)
-            return (try? context.fetch(desc)) ?? []
-        }()
-        let weights: [WeightEntry] = {
-            let predicate = #Predicate<WeightEntry> { $0.pet?.id == petID }
-            let desc = FetchDescriptor<WeightEntry>(predicate: predicate)
-            return (try? context.fetch(desc)) ?? []
-        }()
-
-        var all: [any BasicEvent] = []
-        all.append(contentsOf: meds.map { $0 as any BasicEvent })
-        all.append(contentsOf: vacs.map { $0 as any BasicEvent })
-        all.append(contentsOf: dews.map { $0 as any BasicEvent })
-        all.append(contentsOf: grooms.map { $0 as any BasicEvent })
-        all.append(contentsOf: weights.map { $0 as any BasicEvent })
+        let all = context.fetchAllEvents().filter { $0.pet?.id == petID }
 
         let upcoming = all
             .filter { $0.date >= Date() && !$0.isCompleted }
@@ -91,10 +52,9 @@ final class PetDetailViewModel: ObservableObject {
     // MARK: - Pesos por mascota
     var weights: [WeightEntry] {
         guard let context else { return [] }
-        let all = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
-        return all
+        return context.fetchAll(WeightEntry.self)
             .filter { $0.pet?.id == petID }
-            .sorted { $0.date > $1.date }          // más reciente primero
+            .sorted { $0.date > $1.date }
     }
 
     // Peso actual (última medición)
@@ -226,94 +186,22 @@ extension PetDetailViewModel {
     }
 }
 
-extension Calendar {
-    /// Devuelve la categoría de sección para una fecha futura.
-    func sectionKind(for date: Date) -> EventSectionKind {
-        if isDateInToday(date) {
-            return .today
-        } else if isDateInTomorrow(date) {
-            return .tomorrow
-        }
-        
-        // Semana actual
-        if isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
-            return .thisWeek
-        }
-        
-        // Próxima semana
-        if let nextWeek = self.date(byAdding: .weekOfYear, value: 1, to: Date()),
-           isDate(date, equalTo: nextWeek, toGranularity: .weekOfYear) {
-            return .nextWeek
-        }
-        
-        return .later
-    }
-}
-
 // MARK: - Filtering helpers
 extension PetDetailViewModel {
-    
-    /// Medicamentos ordenados por fecha (más recientes arriba).
-    // MARK: - Medicamentos por mascota
-    var medications: [Medication] {
-        guard let context else { return [] }
-        
-        // 1. Trae TODO de Medication (rápido: pocos objetos)
-        let all = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
-        // 2. Filtra por mascota
-        let filtered = all.filter { $0.pet?.id == petID }
-        // 3. Ordena (más reciente arriba)
-        return filtered.sorted { $0.date < $1.date }
-    }
-    
+
     // MARK: - Vacunas por mascota
     var vaccines: [Vaccine] {
         guard let context else { return [] }
-        
-        let all = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
-        let filtered = all.filter { $0.pet?.id == petID }
-        
-        return filtered.sorted { $0.date < $1.date }   // más reciente arriba
+        return context.fetchAll(Vaccine.self)
+            .filter { $0.pet?.id == petID }
+            .sorted { $0.date < $1.date }
     }
 
-    // MARK: - Grooming por mascota
-    var groomings: [Grooming] {
-        guard let context else { return [] }
-        
-        let all = (try? context.fetch(FetchDescriptor<Grooming>())) ?? []
-        let filtered = all.filter { $0.pet?.id == petID }
-        
-        // Orden: próximos primero (fecha futura) y, si quieres,
-        // completados al final o con otro criterio
-        return filtered.sorted { $0.date > $1.date }
-    }
-    
     // MARK: - Desparasitación por mascota
     var dewormings: [Deworming] {
         guard let context else { return [] }
-        
-        let all = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
-        let filtered = all.filter { $0.pet?.id == petID }
-        
-        return filtered.sorted { $0.date > $1.date }   // próximo primero
+        return context.fetchAll(Deworming.self)
+            .filter { $0.pet?.id == petID }
+            .sorted { $0.date > $1.date }
     }
 }
-
-enum EventSectionKind: Int, CaseIterable, Hashable {
-    case today = 0
-    case tomorrow
-    case thisWeek
-    case nextWeek
-    case later
-    
-    var label: String {
-        switch self {
-        case .today:     return "Hoy"
-        case .tomorrow:  return "Mañana"
-        case .thisWeek:  return "Esta semana"
-        case .nextWeek:  return "Próxima semana"
-        case .later:     return "Más adelante"
-        }
-    }
-}
-

@@ -33,16 +33,15 @@ final class PetDetailViewModelTests: XCTestCase {
     
     func testToggleCompletedSetsDate() throws {
         // 1. Creamos un evento
-        let m = Medication(date: .now, pet: pet,
-                           name: "Bravecto", dosage: "10 mg", frequency: "SID")
-        context.insert(m)
+        let v = Vaccine(date: .now, pet: pet, vaccineName: "Rabia")
+        context.insert(v)
         try context.save()
-        
+
         // 2. Ejecutamos
-        vm.toggleCompleted(m)
-        
+        vm.toggleCompleted(v)
+
         // 3. Comprobamos
-        XCTAssertTrue(m.isCompleted)
-        XCTAssertNotNil(m.completedAt)
+        XCTAssertTrue(v.isCompleted)
+        XCTAssertNotNil(v.completedAt)
     }
 }

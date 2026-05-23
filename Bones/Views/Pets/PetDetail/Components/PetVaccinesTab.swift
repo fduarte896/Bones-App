@@ -663,10 +663,8 @@ private enum VaccinesPreviewData {
     static func makeContainer() -> ModelContainer {
         let schema = Schema([
             Pet.self,
-            Medication.self,
             Vaccine.self,
             Deworming.self,
-            Grooming.self,
             WeightEntry.self
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -818,13 +816,12 @@ private enum VaccinesPreviewData {
 }
 // Seeder para datos demo
 struct DemoSeeder {
-    /// Inserta la mascota ficticia "DemoDog" con un puñado de medicamentos variados (vencidos, actuales, futuros)
-    static func seedDemoDogWithMedications(in container: ModelContainer) -> Pet {
+    static func seedDemoDog(in container: ModelContainer) -> Pet {
         let context = ModelContext(container)
-        return seedDemoDogWithMedications(in: context)
+        return seedDemoDog(in: context)
     }
 
-    static func seedDemoDogWithMedications(in context: ModelContext) -> Pet {
+    static func seedDemoDog(in context: ModelContext) -> Pet {
         let demo = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
         let demoImage = UIImage(named: "MarcosPhoto")
         if let uiImage = demoImage {
@@ -833,18 +830,50 @@ struct DemoSeeder {
         context.insert(demo)
         let now = Date()
         let cal = Calendar.current
-        // Vencidos
-        let m1 = Medication(date: cal.date(byAdding: .day, value: -5, to: now)!, pet: demo, name: "Amoxicilina (dosis 1/3)", dosage: "250 mg", frequency: "cada 8 h")
-        let m2 = Medication(date: cal.date(byAdding: .day, value: -2, to: now)!, pet: demo, name: "Amoxicilina (dosis 2/3)", dosage: "250 mg", frequency: "cada 8 h")
-        // Actual (hoy)
-        let m3 = Medication(date: now, pet: demo, name: "Amoxicilina (dosis 3/3)", dosage: "250 mg", frequency: "cada 8 h")
-        // Futuros próximos
-        let m4 = Medication(date: cal.date(byAdding: .day, value: 2, to: now)!, pet: demo, name: "Prednisona", dosage: "5 mg", frequency: "cada 24 h")
-        let m5 = Medication(date: cal.date(byAdding: .day, value: 4, to: now)!, pet: demo, name: "Omeprazol", dosage: "10 mg", frequency: "cada día")
-        // Otra serie futura
-        let m6 = Medication(date: cal.date(byAdding: .day, value: 6, to: now)!, pet: demo, name: "Cefalexina (dosis 1/2)", dosage: "500 mg", frequency: "cada 12 h")
-        let m7 = Medication(date: cal.date(byAdding: .day, value: 8, to: now)!, pet: demo, name: "Cefalexina (dosis 2/2)", dosage: "500 mg", frequency: "cada 12 h")
-        context.insert(m1); context.insert(m2); context.insert(m3); context.insert(m4); context.insert(m5); context.insert(m6); context.insert(m7)
+
+        // MARK: Vacunas
+        // Antirrábica: aplicada hace 11 meses + refuerzo en 1 mes
+        let rabiesPast = Vaccine(date: cal.date(byAdding: .month, value: -11, to: now)!,
+                                 pet: demo,
+                                 vaccineName: "Antirrábica",
+                                 notes: nil)
+        rabiesPast.isCompleted = true
+        let rabiesNext = Vaccine(date: cal.date(byAdding: .month, value: 1, to: now)!,
+                                 pet: demo,
+                                 vaccineName: "Antirrábica",
+                                 notes: "Refuerzo anual")
+
+        // Polivalente (DHPPi): dosis 1 completada, dosis 2 próxima
+        let dhppi1 = Vaccine(date: cal.date(byAdding: .month, value: -2, to: now)!,
+                             pet: demo,
+                             vaccineName: "Polivalente (DHPPi)",
+                             notes: "Dosis 1")
+        dhppi1.isCompleted = true
+        let dhppi2 = Vaccine(date: cal.date(byAdding: .day, value: 20, to: now)!,
+                             pet: demo,
+                             vaccineName: "Polivalente (DHPPi)",
+                             notes: "Dosis 2")
+
+        // Leptospirosis: próxima en 10 días
+        let lepto = Vaccine(date: cal.date(byAdding: .day, value: 10, to: now)!,
+                            pet: demo,
+                            vaccineName: "Leptospirosis")
+
+        [rabiesPast, rabiesNext, dhppi1, dhppi2, lepto].forEach { context.insert($0) }
+
+        // MARK: Peso
+        // Historial de peso: 4 registros mostrando crecimiento progresivo
+        let w1 = WeightEntry(date: cal.date(byAdding: .month, value: -3, to: now)!,
+                             pet: demo, weightKg: 8.2)
+        let w2 = WeightEntry(date: cal.date(byAdding: .month, value: -2, to: now)!,
+                             pet: demo, weightKg: 8.7)
+        let w3 = WeightEntry(date: cal.date(byAdding: .month, value: -1, to: now)!,
+                             pet: demo, weightKg: 9.1)
+        let w4 = WeightEntry(date: cal.date(byAdding: .day, value: -3, to: now)!,
+                             pet: demo, weightKg: 9.4)
+
+        [w1, w2, w3, w4].forEach { context.insert($0) }
+
         try? context.save()
         return demo
     }

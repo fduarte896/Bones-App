@@ -25,8 +25,8 @@ struct PetDetailViewModelTests {
 
     @Test func fetchEvents_futureEvent_appearsInSections() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        let med = Medication(date: futureDate, pet: pet, name: "Future Med", dosage: "10mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
         vm.fetchEvents()
 
@@ -36,8 +36,8 @@ struct PetDetailViewModelTests {
 
     @Test func fetchEvents_pastEvents_excluded() throws {
         let pastDate = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-        let med = Medication(date: pastDate, pet: pet, name: "Past Med", dosage: "10mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: pastDate, pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
         vm.fetchEvents()
 
@@ -47,9 +47,9 @@ struct PetDetailViewModelTests {
 
     @Test func fetchEvents_completedEvents_excluded() throws {
         let futureDate = Calendar.current.date(byAdding: .day, value: 30, to: Date())!
-        let med = Medication(date: futureDate, pet: pet, name: "Done Med", dosage: "10mg", frequency: "8h")
-        med.isCompleted = true
-        context.insert(med)
+        let vac = Vaccine(date: futureDate, pet: pet, vaccineName: "Rabia")
+        vac.isCompleted = true
+        context.insert(vac)
         try context.save()
         vm.fetchEvents()
 
@@ -58,16 +58,6 @@ struct PetDetailViewModelTests {
     }
 
     // MARK: - Filtered computed properties
-
-    @Test func medications_filteredByPet() throws {
-        let pet2 = makePet(in: context, name: "Max")
-        context.insert(Medication(date: Date(), pet: pet, name: "Luna's Med", dosage: "10mg", frequency: "8h"))
-        context.insert(Medication(date: Date(), pet: pet2, name: "Max's Med", dosage: "10mg", frequency: "8h"))
-        try context.save()
-
-        #expect(vm.medications.count == 1)
-        #expect(vm.medications.first?.name == "Luna's Med")
-    }
 
     @Test func vaccines_filteredByPet() throws {
         let pet2 = makePet(in: context, name: "Max")
@@ -126,13 +116,13 @@ struct PetDetailViewModelTests {
     // MARK: - toggleCompleted
 
     @Test func toggleCompleted_updatesEvent() throws {
-        let med = Medication(date: Date(), pet: pet, name: "Med", dosage: "10mg", frequency: "8h")
-        context.insert(med)
+        let vac = Vaccine(date: Date(), pet: pet, vaccineName: "Rabia")
+        context.insert(vac)
         try context.save()
 
-        vm.toggleCompleted(med)
-        #expect(med.isCompleted == true)
-        #expect(med.completedAt != nil)
+        vm.toggleCompleted(vac)
+        #expect(vac.isCompleted == true)
+        #expect(vac.completedAt != nil)
     }
 
     // MARK: - vaccineSeriesSummaries

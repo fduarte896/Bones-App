@@ -9,14 +9,13 @@ struct PetDetailWithCardPreview: View {
     @State private var selectedTab: DetailTabWithCard = .upcoming
 
     enum DetailTabWithCard: CaseIterable {
-        case upcoming, health, grooming, weight, vaccineCard
+        case upcoming, health, weight, vaccineCard
 
         var title: String {
             switch self {
-            case .upcoming:   return "Próximos"
-            case .health:     return "Salud"
-            case .grooming:   return "Peluquería"
-            case .weight:     return "Peso"
+            case .upcoming:    return "Próximos"
+            case .health:      return "Salud"
+            case .weight:      return "Peso"
             case .vaccineCard: return "Carnet vacunas"
             }
         }
@@ -91,8 +90,6 @@ struct PetDetailWithCardPreview: View {
                     ContentUnavailableView("Demo tab", systemImage: "calendar")
                 case .health:
                     ContentUnavailableView("Demo Salud", systemImage: "cross.case")
-                case .grooming:
-                    ContentUnavailableView("Demo Peluquería", systemImage: "scissors")
                 case .weight:
                     ContentUnavailableView("Demo Peso", systemImage: "scalemass")
                 case .vaccineCard:
@@ -108,17 +105,6 @@ struct PetDetailWithCardPreview: View {
     }
 }
 
-// Helper de edad (misma lógica que tu PetDetailView)
-private func ageString(for birth: Date?) -> String? {
-    guard let birth else { return nil }
-    let comp = Calendar.current.dateComponents([.year, .month], from: birth, to: Date())
-    let y = comp.year ?? 0, m = comp.month ?? 0
-    switch (y, m) {
-    case (0, 0):  return "Recién nacido"
-    case (0, _):  return "\(m) mes\(m > 1 ? "es" : "")"
-    default:      return "\(y) año\(y > 1 ? "s" : "") \(m) m"
-    }
-}
 
 // Preview con datos sembrados para popular la tabla del carnet
 #Preview("Detalle con carnet poblado") {
