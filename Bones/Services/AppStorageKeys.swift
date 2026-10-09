@@ -1,16 +1,13 @@
 import Foundation
 
-/// Centralized AppStorage key constants to avoid scattered string literals.
 enum AppStorageKey {
-    static let didCompleteOnboarding = "didCompleteOnboarding"
-    static let eventsDeepLinkPetID   = "eventsDeepLinkPetID"
-    static let eventsDeepLinkPetName = "eventsDeepLinkPetName"
-    static let eventsDeepLinkAction  = "eventsDeepLinkAction"
-    static let didChooseDemoPet      = "didChooseDemoPet"
-    static let demoGuideStep         = "demoGuideStep"
-    static let didCompleteDemoGuide  = "didCompleteDemoGuide"
-    static let didSeedDewormingDemo  = "didSeedDewormingDemo"
-    static let themeMode             = "themeMode"
-    static let defaultLeadTime       = "defaultLeadTime"
-    static let appCurrencyCode       = "appCurrencyCode"
+    static let selectedPetID       = "selectedPetID"
+    static let reminderLeadDays    = "reminderLeadDays"
+    static let didMigrateToRecords = "didMigrateToRecords.v2"
+}
+
+enum ReminderDefaults {
+    static let leadDays = 3
+    /// Hora del día a la que llegan los recordatorios.
+    static let hour = 9
 }

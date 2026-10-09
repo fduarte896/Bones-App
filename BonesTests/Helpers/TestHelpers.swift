@@ -3,53 +3,51 @@ import Foundation
 import SwiftData
 @testable import Bones
 
-// MARK: - Tags
-
 extension Tag {
     @Tag static var models: Self
-    @Tag static var viewModels: Self
-    @Tag static var parsing: Self
-    @Tag static var scheduling: Self
+    @Tag static var summary: Self
+    @Tag static var logging: Self
+    @Tag static var formatting: Self
+    @Tag static var migration: Self
+    @Tag static var reminders: Self
     @Tag static var widgets: Self
 }
 
-// MARK: - SwiftData Factory
+/// Calendario fijo para que los tests no dependan de la zona horaria de la máquina.
+let testCalendar: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    return calendar
+}()
+
+/// "Hoy" en los tests: 15 de junio de 2026 a mediodía.
+let testNow = makeDate()
 
 @MainActor
 func makeContext() throws -> ModelContext {
-    let schema = Schema([
-        Pet.self,
-        Vaccine.self,
-        Deworming.self,
-        WeightEntry.self
-    ])
     let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-    let container = try ModelContainer(for: schema, configurations: [configuration])
+    let container = try ModelContainer(
+        for: Pet.self, Vaccine.self, Deworming.self, WeightEntry.self,
+        configurations: configuration
+    )
     return ModelContext(container)
 }
 
-// MARK: - Date Factory
-
-/// Creates a deterministic date in UTC to avoid timezone-dependent test failures.
-func makeDate(
-    year: Int = 2026, month: Int = 6, day: Int = 15,
-    hour: Int = 10, minute: Int = 0
-) -> Date {
-    var cal = Calendar(identifier: .gregorian)
-    cal.timeZone = TimeZone(secondsFromGMT: 0)!
-    return cal.date(from: DateComponents(
-        year: year, month: month, day: day,
-        hour: hour, minute: minute
-    )) ?? Date(timeIntervalSince1970: 0)
+func makeDate(year: Int = 2026, month: Int = 6, day: Int = 15, hour: Int = 12, minute: Int = 0) -> Date {
+    testCalendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute))
+        ?? Date(timeIntervalSince1970: 0)
 }
 
-// MARK: - Pet Factory
+/// Una fecha a `offset` días de `testNow`.
+func day(_ offset: Int) -> Date {
+    testCalendar.date(byAdding: .day, value: offset, to: testNow) ?? testNow
+}
 
 @MainActor
 @discardableResult
-func makePet(in context: ModelContext, name: String = "Luna") -> Pet {
+func makePet(in context: ModelContext, name: String = "Luna") throws -> Pet {
     let pet = Pet(name: name)
     context.insert(pet)
-    try! context.save()
+    try context.save()
     return pet
 }

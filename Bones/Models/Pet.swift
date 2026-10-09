@@ -1,18 +1,8 @@
-//
-//  Pet.swift
-//  Bones
-//
-//  Created by Felipe Duarte on 11/07/25.
-//
-
 import Foundation
 import SwiftData
-import SwiftUI
 
-
-// MARK: - Pet
 @Model
-class Pet {
+final class Pet {
     @Attribute(.unique) var id: UUID
     var name: String
     var species: Species
@@ -23,7 +13,6 @@ class Pet {
     var photoData: Data?
     var notes: String?
 
-    // Relación inversa; cada evento tiene var pet: Pet?
     @Relationship(deleteRule: .cascade, inverse: \Vaccine.pet)     var vaccines: [Vaccine] = []
     @Relationship(deleteRule: .cascade, inverse: \Deworming.pet)   var dewormings: [Deworming] = []
     @Relationship(deleteRule: .cascade, inverse: \WeightEntry.pet) var weights: [WeightEntry] = []
@@ -46,12 +35,4 @@ class Pet {
         self.photoData = photoData
         self.notes = notes
     }
-}
-
-enum Species: String, Codable, CaseIterable {
-    case perro, gato
-}
-
-enum Sex: String, Codable, CaseIterable {
-    case male, female, unknown
 }
