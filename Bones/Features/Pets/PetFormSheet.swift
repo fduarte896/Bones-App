@@ -12,6 +12,7 @@ struct PetFormSheet: View {
     @State private var draft: PetDraft
     @State private var isConfirmingDelete = false
     @State private var isShowingSaveError = false
+    @FocusState private var isNameFocused: Bool
 
     init(pet: Pet?, onSaved: @escaping (Pet) -> Void) {
         self.pet = pet
@@ -31,6 +32,7 @@ struct PetFormSheet: View {
                     TextField("Nombre", text: $draft.name)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.words)
+                        .focused($isNameFocused)
                     Picker("Especie", selection: $draft.species) {
                         ForEach(Species.allCases) { species in
                             Text(species.displayName).tag(species)
@@ -79,7 +81,12 @@ struct PetFormSheet: View {
             } message: {
                 Text("Inténtalo de nuevo.")
             }
+            .onAppear(perform: focusNameIfNew)
         }
+    }
+
+    private func focusNameIfNew() {
+        isNameFocused = pet == nil
     }
 
     private func cancel() {

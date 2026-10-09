@@ -8,7 +8,6 @@ struct PrescriptionPhotoSection: View {
 
     @State private var preview: UIImage?
     @State private var pickedItem: PhotosPickerItem?
-    @State private var isShowingLibrary = false
     @State private var isShowingCamera = false
     @State private var cameraData: Data?
 
@@ -26,34 +25,39 @@ struct PrescriptionPhotoSection: View {
                     .clipShape(.rect(cornerRadius: 12))
                     .accessibilityLabel("Foto de la receta")
                 Button("Quitar foto", systemImage: "trash", role: .destructive, action: removePhoto)
-            } else {
+            } else if canUseCamera {
                 Menu {
-                    if canUseCamera {
-                        Button("Tomar foto", systemImage: "camera", action: showCamera)
+                    Button("Tomar foto", systemImage: "camera", action: showCamera)
+                    PhotosPicker(selection: $pickedItem, matching: .images) {
+                        Label("Elegir de Fotos", systemImage: "photo.on.rectangle")
                     }
-                    Button("Elegir de Fotos", systemImage: "photo.on.rectangle", action: showLibrary)
                 } label: {
                     Label("Añadir foto de la receta", systemImage: "camera")
                 }
+                .fullScreenCover(isPresented: $isShowingCamera) {
+                    CameraPicker(imageData: $cameraData)
+                        .ignoresSafeArea()
+                }
+            } else {
+                PhotosPicker(selection: $pickedItem, matching: .images) {
+                    Label("Añadir foto de la receta", systemImage: "photo.on.rectangle")
+                }
             }
 
+            // Las tareas van en esta fila porque es la única que siempre está en pantalla:
+            // un modificador puesto en la `Section` se repetiría en cada una de sus filas.
             TextField("Notas", text: $notes, axis: .vertical)
                 .lineLimit(1...5)
-        }
-        .photosPicker(isPresented: $isShowingLibrary, selection: $pickedItem, matching: .images)
-        .fullScreenCover(isPresented: $isShowingCamera) {
-            CameraPicker(imageData: $cameraData)
-                .ignoresSafeArea()
-        }
-        .task(id: photoData?.count) {
-            preview = photoData.flatMap(UIImage.init(data:))
-        }
-        .task(id: pickedItem) {
-            guard let pickedItem else { return }
-            await store(try? await pickedItem.loadTransferable(type: Data.self))
-        }
-        .task(id: cameraData?.count) {
-            await store(cameraData)
+                .task(id: photoData?.count) {
+                    preview = photoData.flatMap(UIImage.init(data:))
+                }
+                .task(id: pickedItem) {
+                    guard let pickedItem else { return }
+                    await store(try? await pickedItem.loadTransferable(type: Data.self))
+                }
+                .task(id: cameraData?.count) {
+                    await store(cameraData)
+                }
         }
     }
 
@@ -70,9 +74,5 @@ struct PrescriptionPhotoSection: View {
 
     private func showCamera() {
         isShowingCamera = true
-    }
-
-    private func showLibrary() {
-        isShowingLibrary = true
     }
 }

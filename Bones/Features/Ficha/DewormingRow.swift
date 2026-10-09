@@ -36,10 +36,13 @@ struct DewormingRow: View {
                     Text(detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
             Spacer()
             StatusBadge(status: item.status)
+                .fixedSize()
+                .layoutPriority(1)
         }
         .accessibilityElement(children: .combine)
     }
