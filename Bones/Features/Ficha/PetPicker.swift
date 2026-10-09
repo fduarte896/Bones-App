@@ -29,6 +29,8 @@ private struct PetChip: View {
     let selection: Namespace.ID
     let action: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -42,7 +44,12 @@ private struct PetChip: View {
             .frame(minHeight: 44)
             .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
             .background {
-                if isSelected {
+                if isSelected, reduceMotion {
+                    // Sin deslizamiento: la selección se funde de una mascota a otra.
+                    Capsule()
+                        .fill(.tint.quaternary)
+                        .transition(.opacity)
+                } else if isSelected {
                     Capsule()
                         .fill(.tint.quaternary)
                         .matchedGeometryEffect(id: "selection", in: selection)

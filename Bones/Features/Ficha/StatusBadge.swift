@@ -8,10 +8,12 @@ struct StatusBadge: View {
             Label {
                 Text(text)
                     .foregroundStyle(.secondary)
+                    .changingText(text)
             } icon: {
                 Image(systemName: status.symbolName)
                     .foregroundStyle(status.tint)
                     .contentTransition(.symbolEffect(.replace))
+                    .animation(Theme.contentChange, value: status)
             }
             .font(.subheadline)
             .labelStyle(.titleAndIcon)

@@ -6,8 +6,14 @@ struct PetFichaView: View {
     let pet: Pet
     let pets: [Pet]
     let zoom: Namespace.ID
+    /// Sube cada vez que se guarda algo; dispara la confirmación del botón.
+    let savedCount: Int
     @Binding var sheet: RootSheet?
     let onSelect: (Pet) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isConfirming = false
+    @State private var confirmationID = 0
 
     var body: some View {
         let summary = PetHealthSummary(pet: pet)
@@ -65,7 +71,7 @@ struct PetFichaView: View {
             }
         }
         .contentMargins(.bottom, 72, for: .scrollContent)
-        .animation(Theme.contentChange, value: attention)
+        .animation(reduceMotion ? nil : Theme.contentChange, value: attention)
         .navigationTitle(pet.name)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -78,8 +84,21 @@ struct PetFichaView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            RegisterButton(action: registerAnything)
+            RegisterButton(isConfirming: isConfirming, action: registerAnything)
         }
+        .onChange(of: savedCount, confirmSave)
+        .task(id: confirmationID) {
+            guard isConfirming else { return }
+            try? await Task.sleep(for: .seconds(1.8))
+            guard !Task.isCancelled else { return }
+            isConfirming = false
+        }
+    }
+
+    private func confirmSave() {
+        isConfirming = true
+        confirmationID += 1
+        AccessibilityNotification.Announcement("Registrado").post()
     }
 
     private func register(_ request: RecordRequest) {

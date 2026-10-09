@@ -17,6 +17,7 @@ struct VaccineRow: View {
                     .lineLimit(1)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .changingText(lastDate)
                 } else {
                     Text("Sin aplicar todavía")
                         .font(.subheadline)

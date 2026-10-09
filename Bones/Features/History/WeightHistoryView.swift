@@ -19,9 +19,10 @@ struct WeightHistoryView: View {
                         Text(BonesFormat.weight(summary.latestKg))
                             .font(.title)
                             .bold()
-                            .contentTransition(.numericText(value: summary.latestKg))
+                            .changingText(summary.latestKg)
                         if summary.recent.count > 1 {
                             WeightChart(points: summary.recent)
+                                .drawsIn()
                         }
                     }
                 }

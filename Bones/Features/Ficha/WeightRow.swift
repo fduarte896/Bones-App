@@ -17,15 +17,17 @@ struct WeightRow: View {
                 Text(BonesFormat.weight(summary.latestKg))
                     .font(.title3)
                     .bold()
-                    .contentTransition(.numericText(value: summary.latestKg))
+                    .changingText(summary.latestKg)
                 Text(detail)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .changingText(detail)
             }
             Spacer()
             if summary.recent.count > 1 {
                 WeightSparkline(points: summary.recent)
                     .frame(width: 88, height: 36)
+                    .drawsIn()
             }
         }
         .accessibilityElement(children: .combine)

@@ -26,6 +26,9 @@ struct PetAvatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(.circle)
+        // Al cambiar de mascota, la foto anterior se desvanece en lugar de saltar.
+        .id(pet.id)
+        .transition(.blurReplace)
         .accessibilityHidden(true)
         .task(id: PhotoKey(petID: pet.id, byteCount: pet.photoData?.count)) {
             await loadImage()

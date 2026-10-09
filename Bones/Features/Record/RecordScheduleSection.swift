@@ -33,8 +33,7 @@ struct RecordScheduleSection: View {
         } footer: {
             if let footer {
                 Text(footer)
-                    .contentTransition(.numericText())
-                    .animation(.default, value: footer)
+                    .changingText(footer)
             }
         }
     }

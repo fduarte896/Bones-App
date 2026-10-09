@@ -4,6 +4,7 @@ import SwiftData
 struct RootView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Pet.name) private var pets: [Pet]
     @AppStorage(AppStorageKey.selectedPetID) private var selectedPetID = ""
 
@@ -20,11 +21,15 @@ struct RootView: View {
         NavigationStack(path: $path) {
             Group {
                 if let pet = selectedPet {
-                    PetFichaView(pet: pet, pets: pets, zoom: zoom, sheet: $sheet, onSelect: select)
+                    PetFichaView(pet: pet, pets: pets, zoom: zoom, savedCount: savedCount,
+                                 sheet: $sheet, onSelect: select)
+                        .transition(.opacity)
                 } else {
                     WelcomeView(onAddPet: addPet)
+                        .transition(.opacity)
                 }
             }
+            .animation(Theme.contentChange, value: selectedPet == nil)
             .navigationDestination(for: CareRoute.self) { route in
                 CareRouteDestination(route: route, pets: pets, zoom: zoom, onSaved: didSave)
             }
@@ -42,6 +47,7 @@ struct RootView: View {
             }
         }
         .sensoryFeedback(.success, trigger: savedCount)
+        .sensoryFeedback(.selection, trigger: selectedPet?.id)
         .onOpenURL(perform: open)
         .task {
             DataSync.afterChange(in: context)
@@ -60,7 +66,8 @@ struct RootView: View {
 
     private func select(_ pet: Pet) {
         guard selectedPetID != pet.id.uuidString else { return }
-        withAnimation(Theme.contentChange) {
+        // Con "Reducir movimiento" la ficha cambia sin que las filas se deslicen.
+        withAnimation(reduceMotion ? nil : Theme.contentChange) {
             selectedPetID = pet.id.uuidString
         }
     }

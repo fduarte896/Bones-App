@@ -25,6 +25,7 @@ struct AttentionRow: View {
                     Text(dueText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .changingText(dueText)
                 }
             }
             Spacer()

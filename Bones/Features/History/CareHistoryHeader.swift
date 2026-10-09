@@ -18,17 +18,21 @@ struct CareHistoryHeader: View {
             Text(headline)
                 .font(.title)
                 .bold()
-                .contentTransition(.numericText())
+                .changingText(headline)
             if let detail {
                 Text(detail)
                     .foregroundStyle(.secondary)
+                    .changingText(detail)
             }
             if let dueText = BonesFormat.dueText(for: item.status) {
                 Label {
                     Text(dueText)
+                        .changingText(dueText)
                 } icon: {
                     Image(systemName: item.status.symbolName)
                         .foregroundStyle(item.status.tint)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(Theme.contentChange, value: item.status)
                 }
                 .font(.subheadline)
                 .padding(.top, 4)

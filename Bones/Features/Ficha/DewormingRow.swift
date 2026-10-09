@@ -31,12 +31,13 @@ struct DewormingRow: View {
                     .font(.title3)
                     .bold()
                     .foregroundStyle(item.lastDate == nil ? .secondary : .primary)
-                    .contentTransition(.numericText())
+                    .changingText(headline)
                 if let detail {
                     Text(detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                        .changingText(detail)
                 }
             }
             Spacer()

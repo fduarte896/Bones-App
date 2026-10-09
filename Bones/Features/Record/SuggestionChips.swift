@@ -36,6 +36,7 @@ private struct SuggestionChip: View {
             .buttonStyle(.bordered)
             .buttonBorderShape(.capsule)
             .tint(isSelected ? .accentColor : .secondary)
+            .animation(Theme.contentChange, value: isSelected)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

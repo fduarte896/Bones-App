@@ -25,10 +25,12 @@ struct PetInfoRow: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
                     Text(facts)
                         .foregroundStyle(.primary)
+                        .changingText(facts)
                     if let details {
                         Text(details)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .changingText(details)
                     }
                 }
                 Spacer()
