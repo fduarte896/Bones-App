@@ -57,32 +57,6 @@ enum DoseSeries {
         (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
     
-    // Futuras del mismo esquema de vacuna
-    static func futureVaccines(from vac: Vaccine, in context: ModelContext) -> [Vaccine] {
-        guard let petID = vac.pet?.id else { return [vac] }
-        let base = splitDoseBase(from: vac.vaccineName)
-        let start = vac.date
-        let predicate = #Predicate<Vaccine> { v in
-            v.pet?.id == petID && v.date >= start
-        }
-        let fetched = (try? context.fetch(FetchDescriptor<Vaccine>(predicate: predicate))) ?? []
-        return fetched.filter { splitDoseBase(from: $0.vaccineName) == base }
-    }
-    
-    // Determina si una vacuna es "de refuerzo" comparando con la anterior del mismo esquema
-    // Usa un umbral de ~10 meses para evitar confundir refuerzos con dosis del esquema inicial.
-    static func isBooster(_ vac: Vaccine, among all: [Vaccine], thresholdDays: Int = 300) -> Bool {
-        guard let petID = vac.pet?.id else { return false }
-        let base = splitDoseBase(from: vac.vaccineName)
-        let siblings = all
-            .filter { $0.pet?.id == petID && splitDoseBase(from: $0.vaccineName) == base }
-            .sorted { $0.date < $1.date }
-        guard let idx = siblings.firstIndex(where: { $0.id == vac.id }), idx > 0 else { return false }
-        let previous = siblings[idx - 1]
-        let days = vac.date.timeIntervalSince(previous.date) / (24 * 3600)
-        return days >= Double(thresholdDays)
-    }
-    
     // Futuras desparasitaciones: fetch único y filtrado en memoria
     // Prioridad: seriesID > rrule > notas normalizadas
     static func futureDewormings(from dew: Deworming, in context: ModelContext) -> [Deworming] {

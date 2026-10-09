@@ -1,214 +1,61 @@
-//
-//  PetsListView.swift
-//  Bones
-//
-//  Created by Felipe Duarte on 11/07/25.
-//
-
 import SwiftUI
 import SwiftData
-import PhotosUI          // si muestras miniaturas
-import UIKit             // para UIImage en previews
+import UIKit
 
 struct PetsListView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \Pet.name) private var pets: [Pet]   // alfabético
+    @Query(sort: \Pet.name) private var pets: [Pet]
     @AppStorage(AppStorageKey.didChooseDemoPet)     private var didChooseDemoPet: Bool = false
     @AppStorage(AppStorageKey.demoGuideStep)        private var demoGuideStep: Int = 0
     @AppStorage(AppStorageKey.didCompleteDemoGuide) private var didCompleteDemoGuide: Bool = false
-    
+
     @State private var isPresentingAdd = false
-    @State private var petToEdit: Pet?   // nuevo state
+    @State private var petToEdit: Pet?
     @State private var navigateToPetDetail: Pet?
-    
-    // 2 columnas en iPhone, 3-4 en iPad/landscape (modo compacto)
-    private let columns = [ GridItem(.adaptive(minimum: 150), spacing: 16) ]
-    // Modo detallado (tarjetas más anchas/altas)
-    private let detailedColumns = [ GridItem(.adaptive(minimum: 220), spacing: 16) ]
-    
+
     var body: some View {
         NavigationStack {
             Group {
-            if pets.isEmpty {
-                VStack(spacing: 24) {
-                    ContentUnavailableView("Sin mascotas",
-                                           systemImage: "pawprint")
-                    
-                    Button {
-                        isPresentingAdd = true
-                    } label: {
-                        Label("Añadir mascota", systemImage: "plus")
-                            .font(.headline)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 12)
-                            .background(
-                                Capsule()
-                                    .fill(Color.accentColor)
-                            )
-                            .foregroundStyle(.white)
-                    }
-                }
-                .sheet(isPresented: $isPresentingAdd) {
-                    AddPetSheet()
-                }
-                .sheet(item: $petToEdit) { pet in
-                    EditPetSheet(pet: pet)
-                }
-            }
-            else if pets.count == 1, let pet = pets.first {
-                // Dashboard para una sola mascota
-                SinglePetDashboardView(
-                    pet: pet,
-                    demoGuideStep: $demoGuideStep,
-                    didCompleteDemoGuide: $didCompleteDemoGuide
-                )
+                if pets.isEmpty {
+                    EmptyStateView(onAddPet: { isPresentingAdd = true })
+                } else if pets.count == 1, let pet = pets.first {
+                    VetProDashboard(
+                        pet: pet,
+                        demoGuideStep: $demoGuideStep,
+                        didCompleteDemoGuide: $didCompleteDemoGuide,
+                        onEdit: { petToEdit = pet }
+                    )
                     .navigationTitle("Resumen")
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
-                            Button {
-                                if demoGuideStep == DemoGuideStep.addPet.rawValue {
-                                    demoGuideStep = DemoGuideStep.detail.rawValue
-                                }
-                                isPresentingAdd = true
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                            .demoGuideAnchor(.addPetButton)
+                            navAddButton
+                                .demoGuideAnchor(.addPetButton)
                         }
                     }
-                    .sheet(isPresented: $isPresentingAdd) {
-                        AddPetSheet()
-                    }
-                    .sheet(item: $petToEdit) { pet in
-                        EditPetSheet(pet: pet)
-                    }
-            }
-            else if (2...3).contains(pets.count) {
-                // Carrusel paginado para 2–3 mascotas, cada página replica el mini-dashboard
-                TabView {
-                    ForEach(pets) { pet in
-                        VStack(spacing: 0) {
-                            PetCarouselCard(pet: pet)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                            Spacer(minLength: 0) // ancla arriba el contenido
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    }
-                }
-                .tabViewStyle(.page)
-                .indexViewStyle(.page(backgroundDisplayMode: .always))
-                .navigationTitle("Mascotas")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button { isPresentingAdd = true } label: {
-                            Image(systemName: "plus")
-                        }
-                    }
-                }
-                .sheet(isPresented: $isPresentingAdd) {
-                    AddPetSheet()
-                }
-                .sheet(item: $petToEdit) { pet in
-                    EditPetSheet(pet: pet)
-                }
-            }
-            else if (4...6).contains(pets.count) {
-                // Grilla detallada (mejor aprovechamiento del espacio)
-                ScrollView {
-                    LazyVGrid(columns: detailedColumns, spacing: 16) {
-                        ForEach(pets) { pet in
-                            NavigationLink {
-                                PetDetailView(pet: pet)
-                            } label: {
-                                PetDetailedCardView(
-                                    pet: pet,
-                                    nextEventDate: nextEvent(for: pet),
-                                    lastWeight: lastWeight(for: pet),
-                                    lastVaccine: lastVaccine(for: pet),
-                                    lastDeworming: lastDeworming(for: pet)
-                                )
-                            }
-                            .contextMenu {
-                                Divider()
-                                Button("Eliminar", systemImage: "trash", role: .destructive) {
-                                    context.delete(pet)
-                                    try? context.save()
-                                }
-                                Button("Editar", systemImage: "pencil") {
-                                    petToEdit = pet
-                                    isPresentingAdd = false
-                                }
+                } else if pets.count <= 3 {
+                    VetProCarousel(pets: pets, onEdit: { petToEdit = $0 })
+                        .navigationTitle("Mascotas")
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                navAddButton
                             }
                         }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                }
-                .navigationTitle("Mascotas")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button { isPresentingAdd = true } label: {
-                            Image(systemName: "plus")
-                        }
-                    }
-                }
-                .sheet(isPresented: $isPresentingAdd) {
-                    AddPetSheet()
-                }
-                .sheet(item: $petToEdit) { pet in
-                    EditPetSheet(pet: pet)
-                }
-            }
-            else {
-                // 7 o más: grilla compacta (actual)
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(pets) { pet in
-                            NavigationLink {
-                                PetDetailView(pet: pet)
-                            } label: {
-                                PetCardView(
-                                    pet: pet,
-                                    nextEventDate: nextEvent(for: pet)
-                                )
-                            }
-                            .contextMenu {
-                                Divider()
-                                Button("Eliminar", systemImage: "trash", role: .destructive) {
-                                    context.delete(pet)
-                                    try? context.save()
-                                }
-                                Button("Editar", systemImage: "pencil") {
-                                    petToEdit = pet
-                                    isPresentingAdd = false        // por claridad
-                                }
+                } else {
+                    VetProGrid(pets: pets, onEdit: { petToEdit = $0 })
+                        .navigationTitle("Mascotas")
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                navAddButton
                             }
                         }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
                 }
-                .navigationTitle("Mascotas")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button { isPresentingAdd = true } label: {
-                            Image(systemName: "plus")
-                        }
-                    }
-                }
-                .sheet(isPresented: $isPresentingAdd) {
-                    AddPetSheet()
-                }
-                .sheet(item: $petToEdit) { pet in
-                    EditPetSheet(pet: pet)
-                }
-            }
             }
             .navigationDestination(item: $navigateToPetDetail) { pet in
                 PetDetailView(pet: pet)
             }
         }
+        .sheet(isPresented: $isPresentingAdd) { AddPetSheet() }
+        .sheet(item: $petToEdit) { pet in EditPetSheet(pet: pet) }
         .overlayPreferenceValue(DemoGuideAnchorKey.self) { anchors in
             GeometryReader { proxy in
                 if shouldShowDemoGuide,
@@ -264,698 +111,1126 @@ struct PetsListView: View {
         }
     }
 
+    private var navAddButton: some View {
+        Button {
+            if demoGuideStep == DemoGuideStep.addPet.rawValue {
+                demoGuideStep = DemoGuideStep.detail.rawValue
+            }
+            isPresentingAdd = true
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.bonesInk)
+                    .frame(width: 30, height: 30)
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private var shouldShowDemoGuide: Bool {
         didChooseDemoPet && !didCompleteDemoGuide && demoGuideStep <= DemoGuideStep.detail.rawValue
     }
 
-    private func skipDemoGuide() {
-        didCompleteDemoGuide = true
-    }
+    private func skipDemoGuide() { didCompleteDemoGuide = true }
 
     private func openDetailIfPossible() {
-        if let pet = pets.first {
-            navigateToPetDetail = pet
-        }
-    }
-    
-    // --- helpers para tarjetas ---
-    private func nextEvent(for pet: Pet) -> Date? {
-        let now = Date()
-
-        // 1. Vacunas
-        let vacDate = (try? context.fetch(
-            FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\Vaccine.date)])
-        ))?
-        .first { $0.pet?.id == pet.id && $0.date >= now }?
-        .date
-
-        // 2. Desparasitación
-        let dewDate = (try? context.fetch(
-            FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\Deworming.date)])
-        ))?
-        .first { $0.pet?.id == pet.id && $0.date >= now }?
-        .date
-
-        // Devuelve la fecha más cercana (mínima no-nula)
-        return [vacDate, dewDate]
-            .compactMap { $0 }
-            .min()
-    }
-    
-    private func lastWeight(for pet: Pet) -> WeightEntry? {
-        let items = (try? context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id }
-    }
-
-    private func lastVaccine(for pet: Pet) -> Vaccine? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
-    }
-
-    private func lastDeworming(for pet: Pet) -> Deworming? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
+        if let pet = pets.first { navigateToPetDetail = pet }
     }
 }
 
-// MARK: - Solicitud de nuevo evento para sheets
-
-private struct QuickAddRequest: Identifiable {
-    let id = UUID()
-    let kind: EventKind
-}
+// MARK: - Private helpers
 
 private struct DetailNavTarget: Identifiable, Hashable {
     let id = UUID()
     let tab: DetailTab
 }
 
-// MARK: - Dashboard para una sola mascota
+private struct PetQuickAdd: Identifiable {
+    let id = UUID()
+    let pet: Pet
+    let kind: EventKind
+}
 
-private struct SinglePetDashboardView: View {
+private struct CarouselNavTarget: Identifiable, Hashable {
+    let petID: UUID
+    let tab: DetailTab
+    var id: String { "\(petID)-\(tab)" }
+}
+
+// MARK: - A · Empty State
+
+private struct EmptyStateView: View {
+    let onAddPet: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 28) {
+                Spacer(minLength: 44)
+
+                // Central card
+                VStack(spacing: 24) {
+                    // Stacked cards illustration
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.bonesRule)
+                            .frame(width: 76, height: 58)
+                            .rotationEffect(.degrees(-9))
+                            .offset(x: -14, y: 8)
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.bonesRuleSoft)
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.bonesRule, lineWidth: 1))
+                            .frame(width: 76, height: 58)
+                            .rotationEffect(.degrees(6))
+                            .offset(x: 12, y: 4)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12).fill(Color.bonesPanel)
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5]))
+                                .foregroundStyle(Color.bonesRule)
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [4]))
+                                    .foregroundStyle(Color.bonesRule)
+                                    .frame(width: 30, height: 30)
+                                Image(systemName: "pawprint.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.bonesInkFaint)
+                            }
+                        }
+                        .frame(width: 76, height: 58)
+                    }
+                    .frame(height: 96)
+
+                    VStack(spacing: 8) {
+                        Text("Aún no hay mascotas")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Color.bonesInk)
+                        Text("Añade tu primera mascota para llevar un registro de su salud y cuidados.")
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(Color.bonesInkSoft)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 240)
+                    }
+
+                    Button(action: onAddPet) {
+                        Label("Añadir mascota", systemImage: "plus")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Capsule().fill(Color.bonesInk))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 28)
+                .padding(.horizontal, 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color.bonesPanel)
+                        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.bonesRule, lineWidth: 1))
+                )
+                .padding(.horizontal, 20)
+
+                // 3-up feature grid
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("QUÉ PUEDES REGISTRAR")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.5)
+                        .foregroundStyle(Color.bonesInkFaint)
+                        .padding(.horizontal, 20)
+
+                    HStack(spacing: 8) {
+                        FeatureChip(icon: "syringe.fill",    label: "Vacunas",    color: .bonesVaccine)
+                        FeatureChip(icon: "drop.fill",       label: "Desparas.",  color: .bonesDeworming)
+                        FeatureChip(icon: "scalemass.fill",  label: "Peso",       color: .bonesWeight)
+                    }
+                    .padding(.horizontal, 20)
+                }
+
+                Spacer(minLength: 44)
+            }
+        }
+        .background(Color.bonesBg.ignoresSafeArea())
+    }
+}
+
+private struct FeatureChip: View {
+    let icon: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(color.opacity(0.12))
+                    .frame(width: 36, height: 36)
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                    .font(.system(size: 15))
+            }
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.bonesInkSoft)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.bonesPanel)
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.bonesRule, lineWidth: 1))
+        )
+    }
+}
+
+// MARK: - B · Dashboard (1 mascota)
+
+private struct VetProDashboard: View {
     @Environment(\.modelContext) private var context
     let pet: Pet
     @Binding var demoGuideStep: Int
     @Binding var didCompleteDemoGuide: Bool
+    let onEdit: () -> Void
 
     @State private var detailDestination: DetailNavTarget?
-    @State private var isPresentingEdit = false
     @State private var showingDeleteAlert = false
-    
-    // Layout de tarjetas: dos columnas fijas
-    private let twoCols = [ GridItem(.flexible(), spacing: 12),
-                            GridItem(.flexible(), spacing: 12) ]
-    
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                header
-                
-                // Fila 1: Peso actual (izq) + Próxima vacuna (der)
-                LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                    currentWeightCard
-                    nextVaccineCard
-                }
-                .padding(.horizontal)
-
-                // Fila 2: Última vacuna (izq) + Próxima desparasitación (der)
-                LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                    lastVaccineCard
-                    nextDewormingCard
-                }
-                .padding(.horizontal)
-                
-                // Botón eliminar mascota
-                VStack(spacing: 8) {
-                    Button(role: .destructive) {
-                        showingDeleteAlert = true
-                    } label: {
-                        Label("Eliminar mascota", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    
-                    Text("Se eliminarán también todos sus eventos.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
+                heroCard
+                    .demoGuideAnchor(.dashboardHeader)
+                upcomingSection
+                statusSection
+                hintCard
+                deleteButton
             }
-            .padding(.vertical, 12)
-            .demoGuideAnchor(.dashboardHeader)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 32)
         }
+        .background(Color.bonesBg.ignoresSafeArea())
         .navigationDestination(item: $detailDestination) { target in
             PetDetailView(pet: pet, initialTab: target.tab)
-        }
-        .sheet(isPresented: $isPresentingEdit) {
-            EditPetSheet(pet: pet)
         }
         .alert("¿Eliminar mascota?", isPresented: $showingDeleteAlert) {
             Button("Eliminar", role: .destructive) { deletePet() }
             Button("Cancelar", role: .cancel) { }
         } message: {
-            Text("Esta acción no se puede deshacer.")
+            Text("Esta acción no se puede deshacer. Se eliminarán también todos sus eventos.")
         }
     }
 
-    // Cabecera con foto + datos + acciones
-    private var header: some View {
-        HStack(alignment: .center, spacing: 16) {
-            // Foto — toca para ir a tab Próximos
-            NavigationLink {
-                PetDetailView(pet: pet, initialTab: .upcoming)
-            } label: {
-                Group {
-                    if let data = pet.photoData, let ui = UIImage(data: data) {
-                        Image(uiImage: ui)
-                            .resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "pawprint.fill")
-                            .resizable().scaledToFit()
-                            .foregroundStyle(.secondary)
-                            .padding(20)
-                    }
-                }
-                .frame(width: 96, height: 96)
-                .background(Color(.systemGray6))
-                .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .demoGuideAnchor(.detailButton)
-            .simultaneousGesture(TapGesture().onEnded {
-                if demoGuideStep == DemoGuideStep.detail.rawValue {
-                    demoGuideStep = DemoGuideStep.upcoming.rawValue
-                }
-            })
+    // MARK: Hero card
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(
+                    colors: [pet.tone.hue.opacity(0.14), pet.tone.hue.opacity(0)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 80)
 
-            // Datos básicos
-            VStack(alignment: .leading, spacing: 4) {
-                Text(pet.name)
-                    .font(.title2).bold()
-                HStack(spacing: 6) {
-                    Text(pet.sex.displayName)
-                    Text("·")
-                    Text(pet.species.rawValue.capitalized)
-                    if let breed = pet.breed, !breed.isEmpty {
-                        Text("·")
-                        Text(breed)
-                    }
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-                if let age = ageString(for: pet.birthDate) {
-                    Text(age)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Button {
-                    isPresentingEdit = true
-                } label: {
-                    Label("Editar", systemImage: "pencil")
-                }
-                .buttonStyle(.bordered)
-                .padding(.top, 4)
-            }
-        }
-        .padding(.horizontal)
-    }
-    
-    // MARK: - Tarjetas (nueva estructura)
-
-    private var nextVaccineCard: some View {
-        let next = nextVaccine()
-        return InfoCard(
-            icon: "syringe",
-            title: "Próxima vacuna",
-            primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
-            secondary: next?.vaccineName
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .vaccines)
-        }
-    }
-
-    private var lastVaccineCard: some View {
-        let last = lastVaccine()
-        return InfoCard(
-            icon: "syringe",
-            title: "Última \nvacuna",
-            primary: last.map { formatDate($0.date) } ?? "Nunca",
-            secondary: last.map { DoseSeries.splitDoseBase(from: $0.vaccineName) }
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .vaccines)
-        }
-    }
-
-    private var nextDewormingCard: some View {
-        let next = nextDeworming()
-        return InfoCard(
-            icon: "ladybug.fill",
-            title: "Próxima desparasitación",
-            primary: next.map { formatDateTime($0.date) } ?? "Sin programar",
-            secondary: next?.notes
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .deworming)
-        }
-    }
-
-    private var lastDewormingCard: some View {
-        let last = lastDeworming()
-        return InfoCard(
-            icon: "ladybug.fill",
-            title: "Última desparasitación",
-            primary: last.map { formatDateTime($0.date) } ?? "Nunca",
-            secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .deworming)
-        }
-    }
-
-    private var currentWeightCard: some View {
-        let last = lastWeight()
-        return InfoCard(
-            icon: "scalemass",
-            title: "Peso \nactual",
-            primary: last.map { String(format: "%.1f kg", $0.weightKg) } ?? "—",
-            secondary: last.map { formatDate($0.date) }
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .weight)
-        }
-    }
-
-    // MARK: - Fetch helpers SIN #Predicate (evita errores de macro)
-    private func nextVaccine() -> Vaccine? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date >= now && !$0.isCompleted }
-    }
-    
-    private func nextDeworming() -> Deworming? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date >= now && !$0.isCompleted }
-    }
-    
-    private func lastVaccine() -> Vaccine? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
-    }
-    
-    private func lastDeworming() -> Deworming? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
-    }
-    
-    private func lastWeight() -> WeightEntry? {
-        let items = (try? context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id }
-    }
-    
-    // MARK: - Delete
-    private func deletePet() {
-        // 1) Cancelar notificaciones de todos sus eventos
-        let vacs = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
-        let dews = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
-        let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
-
-        for e in vacs where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        for e in dews where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        for e in weights where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        
-        // 2) Eliminar la mascota (cascade borra relaciones)
-        context.delete(pet)
-        try? context.save()
-        
-        let gen = UINotificationFeedbackGenerator()
-        gen.notificationOccurred(.success)
-        
-        // 3) Notificar cambios para que otras vistas refresquen
-        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
-    }
-}
-
-// Tarjeta del carrusel (página) para 2–3 mascotas – replica el mini-dashboard
-private struct PetCarouselCard: View {
-    @Environment(\.modelContext) private var context
-    let pet: Pet
-
-    @State private var detailDestination: DetailNavTarget?
-    @State private var isPresentingEdit = false
-    @State private var showingDeleteAlert = false
-
-    // Dos columnas fijas para las filas
-    private let twoCols = [ GridItem(.flexible(), spacing: 12),
-                            GridItem(.flexible(), spacing: 12) ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Cabecera
-            HStack(alignment: .center, spacing: 16) {
-                // Foto — toca para ir a tab Próximos
-                NavigationLink {
-                    PetDetailView(pet: pet, initialTab: .upcoming)
-                } label: {
-                    Group {
-                        if let data = pet.photoData, let ui = UIImage(data: data) {
-                            Image(uiImage: ui)
-                                .resizable().scaledToFill()
-                        } else {
-                            Image(systemName: "pawprint.fill")
-                                .resizable().scaledToFit()
-                                .foregroundStyle(.secondary)
-                                .padding(20)
-                        }
-                    }
-                    .frame(width: 96, height: 96)
-                    .background(Color(.systemGray6))
-                    .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(pet.name)
-                        .font(.title2).bold()
-                    HStack(spacing: 6) {
-                        Text(pet.sex.displayName)
-                        Text("·")
-                        Text(pet.species.rawValue.capitalized)
-                        if let breed = pet.breed, !breed.isEmpty {
-                            Text("·")
-                            Text(breed)
-                        }
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                    if let age = ageString(for: pet.birthDate) {
-                        Text(age)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Button {
-                        isPresentingEdit = true
+                HStack(spacing: 14) {
+                    NavigationLink {
+                        PetDetailView(pet: pet, initialTab: .upcoming)
                     } label: {
-                        Label("Editar", systemImage: "pencil")
+                        Monogram(pet: pet, size: 68, radius: 18)
                     }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
-                }
-            }
-            
-            // Fila 1: Peso actual (izq) + Próxima vacuna (der)
-            LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                currentWeightCard
-                nextVaccineCard
-            }
+                    .buttonStyle(.plain)
+                    .demoGuideAnchor(.detailButton)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        if demoGuideStep == DemoGuideStep.detail.rawValue {
+                            demoGuideStep = DemoGuideStep.upcoming.rawValue
+                        }
+                    })
 
-            // Fila 2: Última vacuna (izq) + Próxima desparasitación (der)
-            LazyVGrid(columns: twoCols, alignment: .leading, spacing: 12) {
-                lastVaccineCard
-                nextDewormingCard
-            }
-            
-            // Botón eliminar mascota (como en 1 mascota)
-            VStack(spacing: 8) {
-                Button(role: .destructive) {
-                    showingDeleteAlert = true
-                } label: {
-                    Label("Eliminar mascota", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                
-                Text("Se eliminarán también todos sus eventos.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .contextMenu {
-            Divider()
-            Button("Eliminar", systemImage: "trash", role: .destructive) {
-                showingDeleteAlert = true
-            }
-            Button("Editar", systemImage: "pencil") {
-                isPresentingEdit = true
-            }
-        }
-        .navigationDestination(item: $detailDestination) { target in
-            PetDetailView(pet: pet, initialTab: target.tab)
-        }
-        .sheet(isPresented: $isPresentingEdit) {
-            EditPetSheet(pet: pet)
-        }
-        .alert("¿Eliminar mascota?", isPresented: $showingDeleteAlert) {
-            Button("Eliminar", role: .destructive) { deletePet() }
-            Button("Cancelar", role: .cancel) { }
-        } message: {
-            Text("Esta acción no se puede deshacer.")
-        }
-    }
-
-    // MARK: - Tarjetas
-    private var nextVaccineCard: some View {
-        let next = nextVaccine()
-        return InfoCard(
-            icon: "syringe",
-            title: "Próxima vacuna",
-            primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
-            secondary: next?.vaccineName
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .vaccines)
-        }
-    }
-
-    private var lastVaccineCard: some View {
-        let last = lastVaccine()
-        return InfoCard(
-            icon: "syringe",
-            title: "Última \nvacuna",
-            primary: last?.date.formatted(date: .abbreviated, time: .omitted) ?? "Nunca",
-            secondary: last.map { DoseSeries.splitDoseBase(from: $0.vaccineName) }
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .vaccines)
-        }
-    }
-
-    private var nextDewormingCard: some View {
-        let next = nextDeworming()
-        return InfoCard(
-            icon: "ladybug.fill",
-            title: "Próxima desparasitación",
-            primary: next?.date.formatted(date: .abbreviated, time: .shortened) ?? "Sin programar",
-            secondary: next?.notes
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .deworming)
-        }
-    }
-
-    private var lastDewormingCard: some View {
-        let last = lastDeworming()
-        return InfoCard(
-            icon: "ladybug.fill",
-            title: "Última desparasitación",
-            primary: last?.date.formatted(date: .abbreviated, time: .shortened) ?? "Nunca",
-            secondary: last.map { esRelativeFormatter.localizedString(for: $0.date, relativeTo: Date()) }
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .deworming)
-        }
-    }
-
-    private var currentWeightCard: some View {
-        let last = lastWeight()
-        return InfoCard(
-            icon: "scalemass",
-            title: "Peso \nactual",
-            primary: last.map { String(format: "%.1f kg", $0.weightKg) } ?? "—",
-            secondary: last.map { $0.date.formatted(date: .abbreviated, time: .omitted) }
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            detailDestination = DetailNavTarget(tab: .weight)
-        }
-    }
-
-    // MARK: - Fetch helpers (evita macro #Predicate)
-    private func nextVaccine() -> Vaccine? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date >= now && !$0.isCompleted }
-    }
-    
-    private func nextDeworming() -> Deworming? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .forward)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date >= now && !$0.isCompleted }
-    }
-    
-    private func lastVaccine() -> Vaccine? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
-    }
-    
-    private func lastDeworming() -> Deworming? {
-        let now = Date()
-        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id && $0.date <= now && $0.isCompleted }
-    }
-    
-    private func lastWeight() -> WeightEntry? {
-        let items = (try? context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
-        return items.first { $0.pet?.id == pet.id }
-    }
-    
-    // MARK: - Delete
-    private func deletePet() {
-        // 1) Cancelar notificaciones de todos sus eventos
-        let vacs = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
-        let dews = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
-        let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
-
-        for e in vacs where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        for e in dews where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        for e in weights where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
-        
-        // 2) Eliminar la mascota (cascade borra relaciones)
-        context.delete(pet)
-        try? context.save()
-        
-        let gen = UINotificationFeedbackGenerator()
-        gen.notificationOccurred(.success)
-        
-        // 3) Notificar cambios para que otras vistas refresquen
-        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
-    }
-}
-
-// Tarjeta detallada para grilla (4–6 mascotas)
-private struct PetDetailedCardView: View {
-    let pet: Pet
-    let nextEventDate: Date?
-    let lastWeight: WeightEntry?
-    let lastVaccine: Vaccine?
-    let lastDeworming: Deworming?
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Imagen ancha
-            Group {
-                if let data = pet.photoData, let ui = UIImage(data: data) {
-                    Image(uiImage: ui)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    ZStack {
-                        Color(.systemGray6)
-                        Image(systemName: "pawprint.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(pet.name)
+                            .font(.system(size: 26, weight: .semibold))
+                            .tracking(-0.4)
+                            .foregroundStyle(Color.bonesInk)
+                        StatusPill(status: pet.healthStatus, label: pet.healthStatusLabel)
                     }
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
-            .frame(height: 140)
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            
-            // Datos
-            Text(pet.name)
-                .font(.headline)
-                .lineLimit(1)
-            
+
             HStack(spacing: 6) {
                 Text(pet.species.rawValue.capitalized)
                 if let breed = pet.breed, !breed.isEmpty {
-                    Text("·")
+                    Text("·").foregroundStyle(Color.bonesInkFaint)
                     Text(breed)
                 }
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            
-            // Próximo evento
-            HStack(spacing: 8) {
-                Image(systemName: "calendar")
-                    .foregroundStyle(.secondary)
-                Text(nextEventDate.map { formatDateTime($0) } ?? "Sin eventos próximos")
-            }
-            .font(.caption)
-            .lineLimit(1)
-            
-            // Peso actual
-            HStack(spacing: 8) {
-                Image(systemName: "scalemass")
-                    .foregroundStyle(.secondary)
-                if let w = lastWeight {
-                    Text(String(format: "%.1f kg", w.weightKg))
-                    Spacer()
-                    Text(formatDate(w.date))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("—")
+                if let age = ageString(for: pet.birthDate) {
+                    Text("·").foregroundStyle(Color.bonesInkFaint)
+                    Text(age)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
                 }
+                Spacer(minLength: 0)
+                Button { onEdit() } label: {
+                    Text("Editar")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.bonesInkSoft)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 10)
+                        .background(Capsule().strokeBorder(Color.bonesRule, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
             }
-            .font(.caption)
+            .font(.system(size: 13.5, weight: .medium))
+            .foregroundStyle(Color.bonesInkSoft)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.bonesPanel)
+                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.bonesRule, lineWidth: 1))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
 
-            // Última vacuna
-            if let lastVaccine {
-                HStack(spacing: 8) {
-                    Image(systemName: "syringe")
-                        .foregroundStyle(.secondary)
-                    Text(DoseSeries.splitDoseBase(from: lastVaccine.vaccineName))
+    // MARK: Upcoming section
+    private var upcomingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("Próximos eventos")
+            HStack(spacing: 10) {
+                Group {
+                    if let vac = nextVaccine() {
+                        KpiCard(
+                            icon: "syringe.fill", iconColor: .bonesVaccine,
+                            pillLabel: bonesRelativeLabel(for: vac.date),
+                            eyebrow: "Próx. vacuna",
+                            dateText: bonesShortDate(vac.date),
+                            eventName: DoseSeries.splitDoseBase(from: vac.vaccineName),
+                            date: vac.date,
+                            status: eventStatus(vac.date)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { detailDestination = DetailNavTarget(tab: .vaccines) }
+                    } else {
+                        emptyKpiCard(icon: "syringe.fill", iconColor: .bonesVaccine, label: "Próx. vacuna")
+                            .onTapGesture { detailDestination = DetailNavTarget(tab: .vaccines) }
+                    }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
-
-            // Última desparasitación
-            if let lastDeworming {
-                HStack(spacing: 8) {
-                    Image(systemName: "ladybug.fill")
-                        .foregroundStyle(.secondary)
-                    Text(formatDateTime(lastDeworming.date))
+                Group {
+                    if let dew = nextDeworming() {
+                        KpiCard(
+                            icon: "drop.fill", iconColor: .bonesDeworming,
+                            pillLabel: bonesRelativeLabel(for: dew.date),
+                            eyebrow: "Próx. desparas.",
+                            dateText: bonesShortDate(dew.date),
+                            eventName: dew.notes ?? "Desparasitación",
+                            date: dew.date,
+                            status: eventStatus(dew.date)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { detailDestination = DetailNavTarget(tab: .deworming) }
+                    } else {
+                        emptyKpiCard(icon: "drop.fill", iconColor: .bonesDeworming, label: "Próx. desparas.")
+                            .onTapGesture { detailDestination = DetailNavTarget(tab: .deworming) }
+                    }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: Status section
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("Estado")
+            VStack(spacing: 0) {
+                weightRow
+                Divider().background(Color.bonesRule).padding(.horizontal, 14)
+                lastVaccineRow
+                Divider().background(Color.bonesRule).padding(.horizontal, 14)
+                lastDewormingRow
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.bonesPanel)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.bonesRule, lineWidth: 1))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private var weightRow: some View {
+        let weights = sortedWeights()
+        let last = weights.first
+        let (deltaStr, trend): (String?, WeightTrend?) = {
+            guard weights.count >= 2 else { return (nil, nil) }
+            let diff = weights[0].weightKg - weights[1].weightKg
+            if abs(diff) < 0.05 { return ("+0.0", .flat) }
+            let sign = diff > 0 ? "+" : ""
+            return ("\(sign)\(String(format: "%.1f", diff))", diff > 0 ? .up : .down)
+        }()
+
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(Color.bonesBg)
+                    .frame(width: 30, height: 30)
+                Image(systemName: "scalemass.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.bonesWeight)
+            }
+            Text("PESO")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(Color.bonesInkFaint)
+            Spacer(minLength: 0)
+            if let w = last {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(String(format: "%.1f", w.weightKg))
+                        .font(.system(size: 24, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.bonesInk)
+                    Text("kg")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.bonesInkSoft)
+                }
+                if let ds = deltaStr, let tr = trend {
+                    DeltaBadge(delta: ds, trend: tr)
+                }
+                Text(bonesRelativeLabel(for: w.date))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.bonesInkFaint)
+            } else {
+                Text("—")
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.bonesInkFaint)
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .contentShape(Rectangle())
+        .onTapGesture { detailDestination = DetailNavTarget(tab: .weight) }
+    }
+
+    private var lastVaccineRow: some View {
+        Group {
+            if let lv = lastVaccine() {
+                RegRow(
+                    icon: "syringe.fill", iconColor: .bonesVaccine,
+                    label: "Última vacuna",
+                    value: DoseSeries.splitDoseBase(from: lv.vaccineName),
+                    meta: bonesShortDate(lv.date)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { detailDestination = DetailNavTarget(tab: .vaccines) }
+            } else {
+                RegRow(
+                    icon: "syringe.fill", iconColor: .bonesVaccine,
+                    label: "Última vacuna", value: "Sin registrar", meta: nil
+                )
+            }
+        }
+    }
+
+    private var lastDewormingRow: some View {
+        Group {
+            if let ld = lastDeworming() {
+                RegRow(
+                    icon: "drop.fill", iconColor: .bonesDeworming,
+                    label: "Última desparas.",
+                    value: ld.notes ?? "Desparasitación",
+                    meta: bonesShortDate(ld.date)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { detailDestination = DetailNavTarget(tab: .deworming) }
+            } else {
+                RegRow(
+                    icon: "drop.fill", iconColor: .bonesDeworming,
+                    label: "Última desparas.", value: "Sin registrar", meta: nil
+                )
+            }
+        }
+    }
+
+    private var hintCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.left.to.line")
+                .font(.system(size: 16))
+                .foregroundStyle(Color.bonesInkFaint)
+            Text("En la lista de mascotas, desliza una tarjeta a la izquierda para registrar peso o vacuna rápidamente.")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Color.bonesInkSoft)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.bonesPanel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5]))
+                        .foregroundStyle(Color.bonesRule)
+                )
+        )
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            showingDeleteAlert = true
+        } label: {
+            Text("Eliminar mascota")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.bonesOverdue.opacity(0.7))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    // MARK: Helpers
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 13, weight: .semibold))
+            .tracking(0.5)
+            .foregroundStyle(Color.bonesInkFaint)
+    }
+
+    private func emptyKpiCard(icon: String, iconColor: Color, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(iconColor.opacity(0.1))
+                    .frame(width: 30, height: 30)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(iconColor)
+            }
+            Text(label.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(Color.bonesInkFaint)
+            Text("Sin programar")
+                .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.bonesInkFaint)
+        }
+        .contentShape(Rectangle())
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color.bonesPanel)
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.bonesRule, lineWidth: 1))
         )
+    }
+
+    private func eventStatus(_ date: Date) -> HealthStatus {
+        let now = Date()
+        if date < now { return .overdue }
+        if date.timeIntervalSince(now) < 7 * 24 * 3600 { return .soon }
+        return .ok
+    }
+
+    // MARK: Fetch helpers
+    private func nextVaccine() -> Vaccine? {
+        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && !$0.isCompleted }
+    }
+
+    private func nextDeworming() -> Deworming? {
+        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && !$0.isCompleted }
+    }
+
+    private func lastVaccine() -> Vaccine? {
+        let now = Date()
+        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && $0.isCompleted && $0.date <= now }
+    }
+
+    private func lastDeworming() -> Deworming? {
+        let now = Date()
+        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && $0.isCompleted && $0.date <= now }
+    }
+
+    private func sortedWeights() -> [WeightEntry] {
+        let items = (try? context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.filter { $0.pet?.id == pet.id }
+    }
+
+    private func deletePet() {
+        let vacs    = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
+        let dews    = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
+        let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
+        for e in vacs    where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        for e in dews    where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        for e in weights where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        context.delete(pet)
+        try? context.save()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
     }
 }
 
-// Tarjeta simple reutilizable
+// MARK: - C · Carousel (2-3 mascotas)
+
+private struct VetProCarousel: View {
+    let pets: [Pet]
+    let onEdit: (Pet) -> Void
+
+    @State private var navTarget: CarouselNavTarget?
+
+    var body: some View {
+        TabView {
+            ForEach(pets) { pet in
+                PetCarouselCard(
+                    pet: pet,
+                    onEdit: { onEdit(pet) },
+                    onNavigate: { tab in navTarget = CarouselNavTarget(petID: pet.id, tab: tab) }
+                )
+            }
+        }
+        .tabViewStyle(.page)
+        .indexViewStyle(.page(backgroundDisplayMode: .always))
+        .background(Color.bonesBg.ignoresSafeArea())
+        .navigationDestination(item: $navTarget) { target in
+            if let pet = pets.first(where: { $0.id == target.petID }) {
+                PetDetailView(pet: pet, initialTab: target.tab)
+            }
+        }
+    }
+}
+
+private struct PetCarouselCard: View {
+    @Environment(\.modelContext) private var context
+    let pet: Pet
+    let onEdit: () -> Void
+    let onNavigate: (DetailTab) -> Void
+
+    @State private var showingDeleteAlert = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                heroCard
+                upcomingSection
+                statusSection
+                deleteButton
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 32)
+        }
+        .background(Color.bonesBg.ignoresSafeArea())
+        .alert("¿Eliminar mascota?", isPresented: $showingDeleteAlert) {
+            Button("Eliminar", role: .destructive) { deletePet() }
+            Button("Cancelar", role: .cancel) { }
+        } message: {
+            Text("Esta acción no se puede deshacer. Se eliminarán también todos sus eventos.")
+        }
+    }
+
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(
+                    colors: [pet.tone.hue.opacity(0.14), pet.tone.hue.opacity(0)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 80)
+
+                HStack(spacing: 14) {
+                    NavigationLink {
+                        PetDetailView(pet: pet, initialTab: .upcoming)
+                    } label: {
+                        Monogram(pet: pet, size: 68, radius: 18)
+                    }
+                    .buttonStyle(.plain)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(pet.name)
+                            .font(.system(size: 26, weight: .semibold))
+                            .tracking(-0.4)
+                            .foregroundStyle(Color.bonesInk)
+                        StatusPill(status: pet.healthStatus, label: pet.healthStatusLabel)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+            }
+
+            HStack(spacing: 6) {
+                Text(pet.species.rawValue.capitalized)
+                if let breed = pet.breed, !breed.isEmpty {
+                    Text("·").foregroundStyle(Color.bonesInkFaint)
+                    Text(breed)
+                }
+                if let age = ageString(for: pet.birthDate) {
+                    Text("·").foregroundStyle(Color.bonesInkFaint)
+                    Text(age)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                }
+                Spacer(minLength: 0)
+                Button { onEdit() } label: {
+                    Text("Editar")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.bonesInkSoft)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 10)
+                        .background(Capsule().strokeBorder(Color.bonesRule, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            .font(.system(size: 13.5, weight: .medium))
+            .foregroundStyle(Color.bonesInkSoft)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.bonesPanel)
+                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.bonesRule, lineWidth: 1))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var upcomingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("Próximos eventos")
+            HStack(spacing: 10) {
+                Group {
+                    if let vac = nextVaccine() {
+                        KpiCard(
+                            icon: "syringe.fill", iconColor: .bonesVaccine,
+                            pillLabel: bonesRelativeLabel(for: vac.date),
+                            eyebrow: "Próx. vacuna",
+                            dateText: bonesShortDate(vac.date),
+                            eventName: DoseSeries.splitDoseBase(from: vac.vaccineName),
+                            date: vac.date,
+                            status: eventStatus(vac.date)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { onNavigate(.vaccines) }
+                    } else {
+                        emptyKpiCard(icon: "syringe.fill", iconColor: .bonesVaccine, label: "Próx. vacuna")
+                            .onTapGesture { onNavigate(.vaccines) }
+                    }
+                }
+                Group {
+                    if let dew = nextDeworming() {
+                        KpiCard(
+                            icon: "drop.fill", iconColor: .bonesDeworming,
+                            pillLabel: bonesRelativeLabel(for: dew.date),
+                            eyebrow: "Próx. desparas.",
+                            dateText: bonesShortDate(dew.date),
+                            eventName: dew.notes ?? "Desparasitación",
+                            date: dew.date,
+                            status: eventStatus(dew.date)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { onNavigate(.deworming) }
+                    } else {
+                        emptyKpiCard(icon: "drop.fill", iconColor: .bonesDeworming, label: "Próx. desparas.")
+                            .onTapGesture { onNavigate(.deworming) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("Estado")
+            VStack(spacing: 0) {
+                weightRow
+                Divider().background(Color.bonesRule).padding(.horizontal, 14)
+                lastVaccineRow
+                Divider().background(Color.bonesRule).padding(.horizontal, 14)
+                lastDewormingRow
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.bonesPanel)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.bonesRule, lineWidth: 1))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private var weightRow: some View {
+        let weights = sortedWeights()
+        let last = weights.first
+        let (deltaStr, trend): (String?, WeightTrend?) = {
+            guard weights.count >= 2 else { return (nil, nil) }
+            let diff = weights[0].weightKg - weights[1].weightKg
+            if abs(diff) < 0.05 { return ("+0.0", .flat) }
+            let sign = diff > 0 ? "+" : ""
+            return ("\(sign)\(String(format: "%.1f", diff))", diff > 0 ? .up : .down)
+        }()
+
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(Color.bonesBg)
+                    .frame(width: 30, height: 30)
+                Image(systemName: "scalemass.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.bonesWeight)
+            }
+            Text("PESO")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(Color.bonesInkFaint)
+            Spacer(minLength: 0)
+            if let w = last {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(String(format: "%.1f", w.weightKg))
+                        .font(.system(size: 24, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.bonesInk)
+                    Text("kg")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.bonesInkSoft)
+                }
+                if let ds = deltaStr, let tr = trend {
+                    DeltaBadge(delta: ds, trend: tr)
+                }
+                Text(bonesRelativeLabel(for: w.date))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.bonesInkFaint)
+            } else {
+                Text("—")
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.bonesInkFaint)
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .contentShape(Rectangle())
+        .onTapGesture { onNavigate(.weight) }
+    }
+
+    private var lastVaccineRow: some View {
+        Group {
+            if let lv = lastVaccine() {
+                RegRow(
+                    icon: "syringe.fill", iconColor: .bonesVaccine,
+                    label: "Última vacuna",
+                    value: DoseSeries.splitDoseBase(from: lv.vaccineName),
+                    meta: bonesShortDate(lv.date)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { onNavigate(.vaccines) }
+            } else {
+                RegRow(
+                    icon: "syringe.fill", iconColor: .bonesVaccine,
+                    label: "Última vacuna", value: "Sin registrar", meta: nil
+                )
+            }
+        }
+    }
+
+    private var lastDewormingRow: some View {
+        Group {
+            if let ld = lastDeworming() {
+                RegRow(
+                    icon: "drop.fill", iconColor: .bonesDeworming,
+                    label: "Última desparas.",
+                    value: ld.notes ?? "Desparasitación",
+                    meta: bonesShortDate(ld.date)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { onNavigate(.deworming) }
+            } else {
+                RegRow(
+                    icon: "drop.fill", iconColor: .bonesDeworming,
+                    label: "Última desparas.", value: "Sin registrar", meta: nil
+                )
+            }
+        }
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            showingDeleteAlert = true
+        } label: {
+            Text("Eliminar mascota")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.bonesOverdue.opacity(0.7))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 13, weight: .semibold))
+            .tracking(0.5)
+            .foregroundStyle(Color.bonesInkFaint)
+    }
+
+    private func emptyKpiCard(icon: String, iconColor: Color, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(iconColor.opacity(0.1))
+                    .frame(width: 30, height: 30)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(iconColor)
+            }
+            Text(label.uppercased())
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(Color.bonesInkFaint)
+            Text("Sin programar")
+                .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.bonesInkFaint)
+        }
+        .contentShape(Rectangle())
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.bonesPanel)
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.bonesRule, lineWidth: 1))
+        )
+    }
+
+    private func eventStatus(_ date: Date) -> HealthStatus {
+        let now = Date()
+        if date < now { return .overdue }
+        if date.timeIntervalSince(now) < 7 * 24 * 3600 { return .soon }
+        return .ok
+    }
+
+    private func nextVaccine() -> Vaccine? {
+        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && !$0.isCompleted }
+    }
+
+    private func nextDeworming() -> Deworming? {
+        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && !$0.isCompleted }
+    }
+
+    private func lastVaccine() -> Vaccine? {
+        let now = Date()
+        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && $0.isCompleted && $0.date <= now }
+    }
+
+    private func lastDeworming() -> Deworming? {
+        let now = Date()
+        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && $0.isCompleted && $0.date <= now }
+    }
+
+    private func sortedWeights() -> [WeightEntry] {
+        let items = (try? context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.filter { $0.pet?.id == pet.id }
+    }
+
+    private func deletePet() {
+        let vacs    = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
+        let dews    = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
+        let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
+        for e in vacs    where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        for e in dews    where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        for e in weights where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        context.delete(pet)
+        try? context.save()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
+}
+
+// MARK: - D · Grid (4+ mascotas)
+
+private struct VetProGrid: View {
+    @Environment(\.modelContext) private var context
+    let pets: [Pet]
+    let onEdit: (Pet) -> Void
+
+    @State private var quickAdd: PetQuickAdd?
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                ForEach(pets) { pet in
+                    NavigationLink {
+                        PetDetailView(pet: pet)
+                    } label: {
+                        VetProPetCard(pet: pet)
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button {
+                            quickAdd = PetQuickAdd(pet: pet, kind: .vaccine)
+                        } label: {
+                            Label("Vacuna", systemImage: "syringe.fill")
+                        }
+                        .tint(pet.tone.hue)
+
+                        Button {
+                            quickAdd = PetQuickAdd(pet: pet, kind: .weight)
+                        } label: {
+                            Label("Peso", systemImage: "scalemass.fill")
+                        }
+                        .tint(Color.bonesWeight)
+                    }
+                    .contextMenu {
+                        Button("Editar", systemImage: "pencil") { onEdit(pet) }
+                        Divider()
+                        Button("Eliminar", systemImage: "trash", role: .destructive) { deletePet(pet) }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
+        }
+        .background(Color.bonesBg.ignoresSafeArea())
+        .sheet(item: $quickAdd) { req in
+            EventQuickAddSheet(pet: req.pet, initialKind: req.kind)
+        }
+    }
+
+    private func deletePet(_ pet: Pet) {
+        let vacs    = (try? context.fetch(FetchDescriptor<Vaccine>())) ?? []
+        let dews    = (try? context.fetch(FetchDescriptor<Deworming>())) ?? []
+        let weights = (try? context.fetch(FetchDescriptor<WeightEntry>())) ?? []
+        for e in vacs    where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        for e in dews    where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        for e in weights where e.pet?.id == pet.id { NotificationManager.shared.cancelNotification(id: e.id) }
+        context.delete(pet)
+        try? context.save()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
+    }
+}
+
+// MARK: - PetCard (item de grilla)
+
+private struct VetProPetCard: View {
+    @Environment(\.modelContext) private var context
+    let pet: Pet
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(alignment: .center, spacing: 12) {
+                Monogram(pet: pet, size: 48, radius: 13)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(pet.name)
+                            .font(.system(size: 17, weight: .semibold))
+                            .tracking(-0.2)
+                            .foregroundStyle(Color.bonesInk)
+                        StatusPill(status: pet.healthStatus, label: pet.healthStatusLabel)
+                        Spacer(minLength: 0)
+                    }
+                    HStack(spacing: 5) {
+                        Text(pet.species.rawValue.capitalized)
+                        if let breed = pet.breed, !breed.isEmpty {
+                            Text("·").foregroundStyle(Color.bonesRule)
+                            Text(breed)
+                        }
+                        if let age = ageString(for: pet.birthDate) {
+                            Text("·").foregroundStyle(Color.bonesRule)
+                            Text(age)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        }
+                    }
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.bonesInkSoft)
+                    .lineLimit(1)
+                }
+            }
+
+            // 3-up strip
+            HStack(spacing: 8) {
+                MiniStat(
+                    icon: "syringe.fill", iconColor: .bonesVaccine,
+                    label: "Vacuna",
+                    value: nextVaccineLabel(),
+                    sub: nextVaccineDate()
+                )
+                MiniStat(
+                    icon: "drop.fill", iconColor: .bonesDeworming,
+                    label: "Desparas.",
+                    value: nextDewormingLabel(),
+                    sub: nextDewormingDate()
+                )
+                MiniStat(
+                    icon: "scalemass.fill", iconColor: .bonesWeight,
+                    label: "Peso",
+                    value: lastWeightLabel(),
+                    sub: lastWeightDate()
+                )
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.bonesPanel)
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.bonesRule, lineWidth: 1))
+        )
+    }
+
+    private func nextVaccineLabel() -> String {
+        guard let v = nextVaccine() else { return "Sin programar" }
+        return bonesRelativeLabel(for: v.date).capitalized
+    }
+
+    private func nextVaccineDate() -> String? {
+        nextVaccine().map { bonesShortDate($0.date) }
+    }
+
+    private func nextDewormingLabel() -> String {
+        guard let d = nextDeworming() else { return "Sin programar" }
+        return bonesRelativeLabel(for: d.date).capitalized
+    }
+
+    private func nextDewormingDate() -> String? {
+        nextDeworming().map { bonesShortDate($0.date) }
+    }
+
+    private func lastWeightLabel() -> String {
+        guard let w = lastWeight() else { return "—" }
+        return String(format: "%.1f kg", w.weightKg)
+    }
+
+    private func lastWeightDate() -> String? {
+        lastWeight().map { bonesShortDate($0.date) }
+    }
+
+    private func nextVaccine() -> Vaccine? {
+        let items = (try? context.fetch(FetchDescriptor<Vaccine>(sortBy: [SortDescriptor(\.date)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && !$0.isCompleted }
+    }
+
+    private func nextDeworming() -> Deworming? {
+        let items = (try? context.fetch(FetchDescriptor<Deworming>(sortBy: [SortDescriptor(\.date)]))) ?? []
+        return items.first { $0.pet?.id == pet.id && !$0.isCompleted }
+    }
+
+    private func lastWeight() -> WeightEntry? {
+        let items = (try? context.fetch(FetchDescriptor<WeightEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)]))) ?? []
+        return items.first { $0.pet?.id == pet.id }
+    }
+}
+
 // MARK: - Previews
 
 private enum PetsListPreviewData {
     static func makeContainer() -> ModelContainer {
-        let schema = Schema([
-            Pet.self,
-            Vaccine.self,
-            Deworming.self,
-            WeightEntry.self
-        ])
+        let schema = Schema([Pet.self, Vaccine.self, Deworming.self, WeightEntry.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: config)
     }
@@ -964,83 +1239,42 @@ private enum PetsListPreviewData {
     static func seedPets(count: Int, in container: ModelContainer, withEvents: Bool = true) -> [Pet] {
         let ctx = ModelContext(container)
         var result: [Pet] = []
-        
         let namesDogs = ["Loki", "Kira", "Max", "Nala", "Toby", "Luna", "Rocky", "Milo"]
         let namesCats = ["Mishi", "Mía", "Simba", "Olivia", "Leo", "Coco", "Lola", "Chispa"]
         let breedsDogs = ["Husky", "Labrador", "Pastor", "Mestizo", "Beagle"]
         let breedsCats = ["Común", "Siamés", "Persa", "Mestizo"]
-        let dogColors = ["Blanco", "Marrón", "Negro", "Gris"]
-        let catColors = ["Gris", "Atigrado", "Negro", "Blanco"]
-        
         let now = Date()
         let cal = Calendar.current
-        
+
         for i in 0..<count {
-            let isDog: Bool = (i % 2 == 0)
-            let name: String = isDog ? namesDogs[i % namesDogs.count] : namesCats[i % namesCats.count]
-            let species: Species = isDog ? .perro : .gato
-            let sex: Sex = (i % 3 == 0) ? .male : .female
-            let breed: String = isDog ? breedsDogs[i % breedsDogs.count] : breedsCats[i % breedsCats.count]
-            let yearsOffset = -(1 + (i % 6))
-            let birthDate: Date? = cal.date(byAdding: .year, value: yearsOffset, to: now)
-            let color: String = isDog ? dogColors[i % dogColors.count] : catColors[i % catColors.count]
-            
+            let isDog = (i % 2 == 0)
             let pet = Pet(
-                name: name,
-                species: species,
-                breed: breed,
-                birthDate: birthDate,
-                sex: sex,
-                color: color
+                name: isDog ? namesDogs[i % namesDogs.count] : namesCats[i % namesCats.count],
+                species: isDog ? .perro : .gato,
+                breed: isDog ? breedsDogs[i % breedsDogs.count] : breedsCats[i % breedsCats.count],
+                birthDate: cal.date(byAdding: .year, value: -(1 + i % 6), to: now),
+                sex: (i % 3 == 0) ? .male : .female
             )
-            
-            // Opcional: icono como "foto"
-            if i % 2 == 0,
-               let img = UIImage(systemName: "pawprint.fill"),
-               let data = img.pngData() {
-                pet.photoData = data
-            }
-            
             ctx.insert(pet)
             result.append(pet)
-            
-            // Sembrar algunos eventos para que aparezcan tarjetas
+
             if withEvents {
-                switch i % 4 {
-                case 0:
-                    let v = Vaccine(
-                        date: now.addingTimeInterval(Double(2 + i) * 24 * 3600),
-                        pet: pet,
-                        vaccineName: "Rabia (dosis 1/3)"
-                    )
-                    ctx.insert(v)
-                case 1:
-                    let d2 = Deworming(
-                        date: now.addingTimeInterval(Double(1 + i) * 24 * 3600),
-                        pet: pet,
-                        notes: "Pipeta mensual"
-                    )
-                    ctx.insert(d2)
-                case 2:
-                    let d = Deworming(
-                        date: now.addingTimeInterval(Double(5 + i) * 24 * 3600),
-                        pet: pet,
-                        notes: "Tableta mensual"
-                    )
-                    ctx.insert(d)
-                default:
-                    break
-                }
-                // Además, insertar eventos pasados para que “últimos” tenga sentido
-                let pastVac = Vaccine(date: now.addingTimeInterval(-20 * 24 * 3600),
-                                      pet: pet, vaccineName: "Moquillo")
-                let pastDew = Deworming(date: now.addingTimeInterval(-35 * 24 * 3600),
-                                        pet: pet, notes: "Pipeta externa")
-                let w = WeightEntry(date: now.addingTimeInterval(-3 * 24 * 3600),
-                                    pet: pet, weightKg: isDog ? 22.8 : 4.2)
-                ctx.insert(pastVac)
-                ctx.insert(pastDew)
+                let offsets: [TimeInterval] = [-20, 9, 35]
+                let v = Vaccine(date: now.addingTimeInterval(offsets[i % 3] * 86400), pet: pet,
+                                vaccineName: "Polivalente (1/3)")
+                if offsets[i % 3] < 0 { v.isCompleted = true }
+                ctx.insert(v)
+                let d = Deworming(date: now.addingTimeInterval(Double(5 + i * 3) * 86400), pet: pet,
+                                  notes: "Pipeta mensual")
+                ctx.insert(d)
+                let w = WeightEntry(date: now.addingTimeInterval(-Double(3 + i) * 86400), pet: pet,
+                                    weightKg: isDog ? 22.5 + Double(i) * 0.3 : 4.1 + Double(i) * 0.1)
                 ctx.insert(w)
+                if i > 0 {
+                    let w2 = WeightEntry(date: now.addingTimeInterval(-Double(20 + i) * 86400), pet: pet,
+                                         weightKg: isDog ? 22.2 + Double(i) * 0.3 : 4.0 + Double(i) * 0.1)
+                    ctx.insert(w2)
+                }
             }
         }
         try? ctx.save()
@@ -1048,110 +1282,35 @@ private enum PetsListPreviewData {
     }
 }
 
-#Preview("Lista – Vacío") {
-    let container = PetsListPreviewData.makeContainer()
-    // No insertamos mascotas: muestra estado vacío
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es")) // asegura español en previews
+#Preview("Vacío") {
+    PetsListView().modelContainer(PetsListPreviewData.makeContainer())
 }
 
-#Preview("Lista – 1 mascota") {
-    let container = PetsListPreviewData.makeContainer()
-    _ = PetsListPreviewData.seedPets(count: 1, in: container, withEvents: true)
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
+#Preview("1 mascota — Dashboard") {
+    let c = PetsListPreviewData.makeContainer()
+    _ = PetsListPreviewData.seedPets(count: 1, in: c)
+    return PetsListView().modelContainer(c)
 }
 
-#Preview("Demo Guide – Resumen") {
-    let container = PetsListPreviewData.makeContainer()
-    let ctx = ModelContext(container)
-    let pet = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
-    if let img = UIImage(named: "MarcosPhoto"), let data = img.jpegData(compressionQuality: 0.9) {
-        pet.photoData = data
-    }
-    ctx.insert(pet)
+#Preview("3 mascotas — Carrusel") {
+    let c = PetsListPreviewData.makeContainer()
+    _ = PetsListPreviewData.seedPets(count: 3, in: c)
+    return PetsListView().modelContainer(c)
+}
+
+#Preview("6 mascotas — Grid grande") {
+    let c = PetsListPreviewData.makeContainer()
+    _ = PetsListPreviewData.seedPets(count: 6, in: c)
+    return PetsListView().modelContainer(c)
+}
+
+#Preview("Demo Guide — Resumen") {
+    let c = PetsListPreviewData.makeContainer()
+    let ctx = ModelContext(c)
+    ctx.insert(Pet(name: "Marcos", species: .perro, breed: "Demo", sex: .male))
     try? ctx.save()
-
-    let defaults = UserDefaults.standard
-    defaults.set(true, forKey: "didChooseDemoPet")
-    defaults.set(false, forKey: "didCompleteDemoGuide")
-    defaults.set(DemoGuideStep.summary.rawValue, forKey: "demoGuideStep")
-
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
-}
-
-#Preview("Demo Guide – + Mascota") {
-    let container = PetsListPreviewData.makeContainer()
-    let ctx = ModelContext(container)
-    let pet = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
-    if let img = UIImage(named: "MarcosPhoto"), let data = img.jpegData(compressionQuality: 0.9) {
-        pet.photoData = data
-    }
-    ctx.insert(pet)
-    try? ctx.save()
-
-    let defaults = UserDefaults.standard
-    defaults.set(true, forKey: "didChooseDemoPet")
-    defaults.set(false, forKey: "didCompleteDemoGuide")
-    defaults.set(DemoGuideStep.addPet.rawValue, forKey: "demoGuideStep")
-
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
-}
-
-#Preview("Demo Guide – Ver Detalle") {
-    let container = PetsListPreviewData.makeContainer()
-    let ctx = ModelContext(container)
-    let pet = Pet(name: "Marcos", species: .perro, breed: "Demo Breed", sex: .male)
-    if let img = UIImage(named: "MarcosPhoto"), let data = img.jpegData(compressionQuality: 0.9) {
-        pet.photoData = data
-    }
-    ctx.insert(pet)
-    try? ctx.save()
-
-    let defaults = UserDefaults.standard
-    defaults.set(true, forKey: "didChooseDemoPet")
-    defaults.set(false, forKey: "didCompleteDemoGuide")
-    defaults.set(DemoGuideStep.detail.rawValue, forKey: "demoGuideStep")
-
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
-}
-
-#Preview("Lista – 2 mascotas") {
-    let container = PetsListPreviewData.makeContainer()
-    _ = PetsListPreviewData.seedPets(count: 2, in: container, withEvents: true)
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
-}
-
-#Preview("Lista – 3 mascotas") {
-    let container = PetsListPreviewData.makeContainer()
-    _ = PetsListPreviewData.seedPets(count: 3, in: container, withEvents: true)
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
-}
-
-#Preview("Lista – 5 (detalladas)") {
-    let container = PetsListPreviewData.makeContainer()
-    _ = PetsListPreviewData.seedPets(count: 5, in: container, withEvents: true)
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
-}
-
-#Preview("Lista – varias") {
-    let container = PetsListPreviewData.makeContainer()
-    _ = PetsListPreviewData.seedPets(count: 8, in: container, withEvents: true)
-    return PetsListView()
-        .modelContainer(container)
-        .environment(\.locale, Locale(identifier: "es"))
+    UserDefaults.standard.set(true,  forKey: "didChooseDemoPet")
+    UserDefaults.standard.set(false, forKey: "didCompleteDemoGuide")
+    UserDefaults.standard.set(DemoGuideStep.summary.rawValue, forKey: "demoGuideStep")
+    return PetsListView().modelContainer(c)
 }

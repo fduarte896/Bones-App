@@ -24,11 +24,6 @@ extension Binding where Value == Double {
 // MARK: - Propagación de prescripción a toda la serie
 
 func propagatePrescriptionForVaccine(_ vac: Vaccine, with data: Data?, in context: ModelContext) {
-    guard let petID = vac.pet?.id else { return }
-    let base = DoseSeries.splitDoseBase(from: vac.vaccineName)
-    let predicate = #Predicate<Vaccine> { v in v.pet?.id == petID }
-    let fetched = (try? context.fetch(FetchDescriptor<Vaccine>(predicate: predicate))) ?? []
-    fetched.filter { DoseSeries.splitDoseBase(from: $0.vaccineName) == base }.forEach { $0.prescriptionImageData = data }
     try? context.save()
     NotificationCenter.default.post(name: .eventsDidChange, object: nil)
 }

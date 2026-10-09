@@ -22,12 +22,6 @@ enum EventKind: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Previsualización de vacunas - Modelo visible a nivel de archivo
-struct VaccinePreview {
-    let seriesDates: [Date]
-    let boosterRounds: [[Date]]
-}
-
 // MARK: - Hoja Quick-Add
 struct EventQuickAddSheet: View {
     // Dependencias
@@ -71,34 +65,6 @@ struct EventQuickAddSheet: View {
     @State private var weightDateDirty = false
     @State private var isSettingEventDateProgrammatically = false
     
-    // Programación futura
-    @State private var scheduleEnabled = false
-    
-    // — Vacunas —
-    // Modo
-    enum VaccineSchedulingMode: String, CaseIterable, Identifiable {
-        case automatic = "Automático"
-        case manual = "Manual"
-        var id: Self { self }
-    }
-    @State private var vaccineMode: VaccineSchedulingMode = .automatic
-    
-    // Serie actual (automático)
-    // IMPORTANTE: este valor representa "dosis extra" (adicionales a la inicial)
-    @State private var vaccineSeriesDoseCount: Int = 2
-    @State private var vaccineSeriesSpacingValue: Int = 1
-    @State private var vaccineSeriesSpacingUnit: IntervalUnit = .weeks
-    
-    // Refuerzos (automático)
-    @State private var boostersEnabled: Bool = true
-    @State private var boosterFrequencyValue: Int = 12
-    @State private var boosterFrequencyUnit: IntervalUnit = .months // 12 meses = anual
-    @State private var boosterRoundsCount: Int = 1
-    @State private var boosterIncludesSeries: Bool = false
-    
-    // Manual (fechas adicionales)
-    @State private var vaccineDoses: [VaccineDose] = []
-    
     var body: some View {
         NavigationStack {
             Form {
@@ -119,8 +85,9 @@ struct EventQuickAddSheet: View {
                 Section("Fecha") {
                     let dateLabel: String = {
                         switch kind {
-                        case .deworming, .vaccine: return "Primera dosis"
-                        case .weight:              return "Fecha y hora"
+                        case .deworming: return "Primera dosis"
+                        case .vaccine:   return "Fecha"
+                        case .weight:    return "Fecha y hora"
                         }
                     }()
                     DatePicker(dateLabel,
@@ -139,9 +106,6 @@ struct EventQuickAddSheet: View {
                         .tint(.blue)
                     }
                 }
-                
-                // ---------- Programación futura ----------
-                futureScheduleSection
                 
                 // ---------- RRULE para desparasitación ----------
                 if kind == .deworming {
@@ -278,193 +242,6 @@ private extension EventQuickAddSheet {
         }
     }
     
-    @ViewBuilder var futureScheduleSection: some View {
-        if kind == .vaccine {
-            Section {
-                Toggle("Programar próximas dosis", isOn: $scheduleEnabled)
-                
-                if scheduleEnabled {
-                    vaccineControls
-                }
-            }
-        }
-    }
-    
-    // ---- Vacunas ----
-    struct VaccineDose: Identifiable, Equatable {
-        let id = UUID()
-        var date: Date
-    }
-    
-    @ViewBuilder var vaccineControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Selector de modo
-            Picker("Modo", selection: $vaccineMode) {
-                ForEach(VaccineSchedulingMode.allCases) { m in
-                    Text(m.rawValue).tag(m)
-                }
-            }.pickerStyle(.segmented)
-            
-            if vaccineMode == .automatic {
-                // Serie actual
-                Group {
-                    Text("Serie actual").font(.headline)
-                    // Este valor es "extra", por eso el texto
-                    Stepper("Número de dosis extra: \(vaccineSeriesDoseCount)", value: $vaccineSeriesDoseCount, in: 1...5)
-                    HStack {
-                        Spacer()
-                        IntervalRow(value: $vaccineSeriesSpacingValue, unit: $vaccineSeriesSpacingUnit)
-                    }
-                }
-                
-                // Refuerzos
-                Group {
-                    Toggle("Programar refuerzos", isOn: $boostersEnabled)
-                    if boostersEnabled {
-                        HStack {
-                            Spacer()
-                            IntervalRow(value: $boosterFrequencyValue, unit: $boosterFrequencyUnit)
-                        }
-                        Stepper("Cantidad de rondas: \(boosterRoundsCount)", value: $boosterRoundsCount, in: 1...5)
-                        Toggle("Incluir serie corta en refuerzo", isOn: $boosterIncludesSeries)
-                    }
-                }
-                
-                // Previsualización
-                if let preview = vaccinePreview(
-                    start: eventDate,
-                    seriesCount: vaccineSeriesDoseCount, // extra
-                    seriesSpacingValue: vaccineSeriesSpacingValue,
-                    seriesSpacingUnit: vaccineSeriesSpacingUnit,
-                    boostersEnabled: boostersEnabled,
-                    boosterFreqValue: boosterFrequencyValue,
-                    boosterFreqUnit: boosterFrequencyUnit,
-                    boosterRounds: boosterRoundsCount,
-                    boosterIncludesSeries: boosterIncludesSeries
-                ) {
-                    VaccinePreviewView(preview: preview)
-                }
-                
-            } else {
-                // Modo manual (tu UI actual)
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array($vaccineDoses.enumerated()), id: \.element.id) { idx, $dose in
-                        DatePicker("Dosis \(idx + 2)",
-                                   selection: $dose.date,
-                                   displayedComponents: .date)
-                    }
-                    
-                    HStack {
-                        Button {
-                            let base = vaccineDoses.last?.date ?? eventDate
-                            let next = Calendar.current.date(byAdding: .month, value: 1, to: base)!
-                            vaccineDoses.append(VaccineDose(date: next))
-                        } label: { Label("Añadir dosis", systemImage: "plus.circle") }
-                        .disabled(vaccineDoses.count >= 5)
-                        
-                        if !vaccineDoses.isEmpty {
-                            Spacer()
-                            Button("Limpiar", role: .destructive) { vaccineDoses.removeAll() }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private func index(of id: UUID) -> Int {
-        vaccineDoses.firstIndex { $0.id == id } ?? 0
-    }
-    
-    
-    
-    struct IntervalRow: View {
-        @Binding var value: Int
-        @Binding var unit: IntervalUnit
-        var allowedUnits: [IntervalUnit] = IntervalUnit.allCases
-        var body: some View {
-            HStack(spacing: 12) {
-                Text("Cada")
-                    .foregroundStyle(.secondary)
-                
-                Text("\(value)")
-                    .font(.body.monospacedDigit())
-                
-                // Unidad pegada al número
-                if allowedUnits.count == 1, let only = allowedUnits.first {
-                    Text(only.label)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker(selection: $unit) {
-                        ForEach(allowedUnits) { option in
-                            Text(option.label).tag(option)
-                        }
-                    } label: {
-                        Text(unit.label)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(minWidth: 80)
-                }
-                
-                Spacer()
-                
-                Stepper("", value: $value, in: 1...30)
-                    .labelsHidden()
-            }
-        }
-    }
-}
-
-// MARK: - Previsualización de vacunas
-private struct VaccinePreviewView: View {
-    let preview: VaccinePreview
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Previsualización").font(.headline)
-            // Serie actual
-            if !preview.seriesDates.isEmpty {
-                Text("Serie actual:")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                ForEach(Array(preview.seriesDates.enumerated()), id: \.offset) { idx, d in
-                    HStack {
-                        Text("Dosis \(idx + 1)")
-                        Spacer()
-                        Text(d, format: .dateTime.day().month().year())
-                    }.font(.caption)
-                }
-            }
-            // Refuerzos
-            if !preview.boosterRounds.isEmpty {
-                Text("Refuerzos:")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                ForEach(Array(preview.boosterRounds.enumerated()), id: \.offset) { idx, round in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Ronda \(idx + 1)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ForEach(round, id: \.self) { d in
-                            HStack {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.caption2)
-                                Spacer()
-                                Text(d, format: .dateTime.day().month().year())
-                            }
-                            .font(.caption2)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.top, 4)
-    }
 }
 
 // MARK: - Guardado
@@ -508,75 +285,19 @@ extension EventQuickAddSheet {
         }
         
         // Vacuna
-        let primary = insertVaccineEvent(on: eventDate, doseLabel: nil)
-        if scheduleEnabled { scheduleFutureVaccines(from: primary) }
-        
+        insertVaccineEvent(on: eventDate)
         try? context.save()
         NotificationCenter.default.post(name: .eventsDidChange, object: nil)
         dismiss()
     }
     
-    @discardableResult
-    private func insertVaccineEvent(on date: Date, doseLabel: String?) -> Vaccine {
-        let name = doseLabel.map { "\(title) (\($0))" } ?? title
+    private func insertVaccineEvent(on date: Date) {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let v = Vaccine(date: date, pet: pet,
-                        vaccineName: name, manufacturer: manufacturer)
+                        vaccineName: name,
+                        manufacturer: manufacturer.isEmpty ? nil : manufacturer)
         context.insert(v)
-        notify(id: v.id, title: "Vacuna",
-               body: "\(pet.name) – \(title)", at: date)
-        return v
-    }
-    
-    private func scheduleFutureVaccines(from primary: Vaccine) {
-        if vaccineMode == .automatic {
-            // Serie actual
-            // vaccineSeriesDoseCount es "extra", por eso sumamos 1 para incluir la inicial
-            let seriesDates = generateSeries(
-                start: primary.date,
-                count: vaccineSeriesDoseCount + 1,
-                spacingValue: vaccineSeriesSpacingValue,
-                spacingUnit: vaccineSeriesSpacingUnit
-            )
-            let total = seriesDates.count
-            // Omitimos la primera (primary) para mantener consistencia
-            var idx = 2
-            for d in seriesDates.dropFirst() {
-                insertVaccineEvent(on: d, doseLabel: "dosis \(idx)/\(total)")
-                idx += 1
-            }
-            // Refuerzos
-            if boostersEnabled {
-                let boosterStarts = generateBoosterStarts(
-                    start: primary.date,
-                    rounds: boosterRoundsCount,
-                    freqValue: boosterFrequencyValue,
-                    freqUnit: boosterFrequencyUnit
-                )
-                for start in boosterStarts {
-                    if boosterIncludesSeries {
-                        let round = generateSeries(
-                            start: start,
-                            count: vaccineSeriesDoseCount + 1,
-                            spacingValue: vaccineSeriesSpacingValue,
-                            spacingUnit: vaccineSeriesSpacingUnit
-                        )
-                        let rTotal = round.count
-                        var rIdx = 2
-                        for d in round.dropFirst() {
-                            insertVaccineEvent(on: d, doseLabel: "dosis \(rIdx)/\(rTotal)")
-                            rIdx += 1
-                        }
-                    } else {
-                        insertVaccineEvent(on: start, doseLabel: nil)
-                    }
-                }
-            }
-        } else {
-            // Modo manual: usar fechas provistas
-            for dose in vaccineDoses.sorted(by: { $0.date < $1.date }) {
-                insertVaccineEvent(on: dose.date, doseLabel: nil)
-            }
-        }
+        notify(id: v.id, title: "Vacuna", body: "\(pet.name) – \(name)", at: date)
     }
     
     private func notify(id: UUID, title: String, body: String, at date: Date) {
@@ -652,9 +373,8 @@ private extension EventQuickAddSheet {
         return Double(dot)
     }
     
-    // MARK: - Generadores de fechas y previsualizaciones
-    
-    // Agrega un intervalo a una fecha según la unidad
+    // MARK: - Generadores de fechas (desparasitación)
+
     func addInterval(_ value: Int, unit: IntervalUnit, to date: Date) -> Date {
         let cal = Calendar.current
         switch unit {
@@ -663,76 +383,6 @@ private extension EventQuickAddSheet {
         case .weeks:  return cal.date(byAdding: .weekOfYear, value: value, to: date) ?? date
         case .months: return cal.date(byAdding: .month, value: value, to: date) ?? date
         }
-    }
-    
-    // Serie de vacunas (incluye la fecha inicial). 'count' mínimo 1.
-    func generateSeries(start: Date,
-                        count: Int,
-                        spacingValue: Int,
-                        spacingUnit: IntervalUnit) -> [Date] {
-        let c = max(1, count)
-        var dates: [Date] = [start]
-        var current = start
-        if c > 1 {
-            for _ in 1..<c {
-                current = addInterval(spacingValue, unit: spacingUnit, to: current)
-                dates.append(current)
-            }
-        }
-        return dates
-    }
-    
-    // Fechas de inicio de refuerzos (solo las fechas de arranque de cada ronda)
-    func generateBoosterStarts(start: Date,
-                               rounds: Int,
-                               freqValue: Int,
-                               freqUnit: IntervalUnit) -> [Date] {
-        guard rounds > 0 else { return [] }
-        var starts: [Date] = []
-        var current = start
-        for _ in 0..<rounds {
-            current = addInterval(freqValue, unit: freqUnit, to: current)
-            starts.append(current)
-        }
-        return starts
-    }
-    
-    // Previsualización de vacunas (serie + refuerzos)
-    func vaccinePreview(start: Date,
-                        seriesCount: Int,
-                        seriesSpacingValue: Int,
-                        seriesSpacingUnit: IntervalUnit,
-                        boostersEnabled: Bool,
-                        boosterFreqValue: Int,
-                        boosterFreqUnit: IntervalUnit,
-                        boosterRounds: Int,
-                        boosterIncludesSeries: Bool) -> VaccinePreview? {
-        // Serie actual: seriesCount es "extra", por eso sumamos 1 para incluir la inicial
-        let series = generateSeries(start: start,
-                                    count: max(1, seriesCount + 1),
-                                    spacingValue: seriesSpacingValue,
-                                    spacingUnit: seriesSpacingUnit)
-        
-        var rounds: [[Date]] = []
-        if boostersEnabled {
-            let starts = generateBoosterStarts(start: start,
-                                               rounds: boosterRounds,
-                                               freqValue: boosterFrequencyValue,
-                                               freqUnit: boosterFrequencyUnit)
-            for s in starts {
-                if boosterIncludesSeries {
-                    let r = generateSeries(start: s,
-                                           count: max(1, seriesCount + 1),
-                                           spacingValue: seriesSpacingValue,
-                                           spacingUnit: seriesSpacingUnit)
-                    rounds.append(r)
-                } else {
-                    rounds.append([s])
-                }
-            }
-        }
-        
-        return VaccinePreview(seriesDates: series, boosterRounds: rounds)
     }
     
     // MARK: - RRULE helpers

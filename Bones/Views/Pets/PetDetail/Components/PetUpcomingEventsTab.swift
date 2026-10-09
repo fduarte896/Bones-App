@@ -12,10 +12,8 @@ struct PetUpcomingEventsTab: View {
     @ObservedObject var viewModel: PetDetailViewModel
     @Environment(\.modelContext) private var context
 
-    // Confirmación de borrado en serie
     @State private var pendingFutureCount = 0
     @State private var showingDeleteDialog = false
-    @State private var pendingVac: Vaccine?
     @State private var pendingDew: Deworming?
 
     var body: some View {
@@ -58,6 +56,8 @@ struct PetUpcomingEventsTab: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.bonesBg)
         .onAppear { viewModel.fetchEvents() }
         .onReceive(NotificationCenter.default.publisher(for: .eventsDidChange)) { _ in
             viewModel.fetchEvents()
@@ -67,33 +67,17 @@ struct PetUpcomingEventsTab: View {
             isPresented: $showingDeleteDialog,
             titleVisibility: .visible
         ) {
-            if pendingFutureCount > 0 {
-                if let _ = pendingVac {
-                    Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
-                        deleteThisAndFutureVac()
-                    }
-                    Button("Eliminar solo esta", role: .destructive) {
-                        if let vac = pendingVac { deleteSingle(vac) }
-                    }
-                } else if let _ = pendingDew {
-                    Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
-                        deleteThisAndFutureDew()
-                    }
-                    Button("Eliminar solo esta", role: .destructive) {
-                        if let dew = pendingDew { deleteSingle(dew) }
-                    }
+            if pendingFutureCount > 0, let _ = pendingDew {
+                Button("Eliminar esta y \(pendingFutureCount) futuras", role: .destructive) {
+                    deleteThisAndFutureDew()
                 }
-            } else {
-                // En esta pantalla no presentamos diálogo cuando no hay futuras;
-                // startDelete() elimina directamente en ese caso.
+                Button("Eliminar solo esta", role: .destructive) {
+                    if let dew = pendingDew { deleteSingle(dew) }
+                }
             }
             Button("Cancelar", role: .cancel) { clearPending() }
         } message: {
-            if pendingFutureCount > 0 {
-                Text("Se encontraron \(pendingFutureCount) dosis futuras relacionadas. ¿Deseas borrarlas también?")
-            } else {
-                Text("Esta acción no se puede deshacer.")
-            }
+            Text("Se encontraron \(pendingFutureCount) dosis futuras relacionadas. ¿Deseas borrarlas también?")
         }
     }
 }
@@ -134,10 +118,10 @@ private struct EventRow: View {
 
     private var tint: Color {
         switch event {
-        case is Vaccine:     return .green
-        case is Deworming:   return .orange
-        case is WeightEntry: return .gray
-        default:             return .secondary
+        case is Vaccine:     return .bonesVaccine
+        case is Deworming:   return .bonesDeworming
+        case is WeightEntry: return .bonesWeight
+        default:             return .bonesInkFaint
         }
     }
 
@@ -147,8 +131,8 @@ private struct EventRow: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .foregroundStyle(tint)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(Color(.systemGray6)))
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 9).fill(tint.opacity(0.1)))
 
             VStack(alignment: .leading, spacing: 2) {
                 // Título sin sufijo de dosis
@@ -219,14 +203,7 @@ private extension PetUpcomingEventsTab {
     func startDelete(for event: any BasicEvent) {
         switch event {
         case let vac as Vaccine:
-            let count = max(0, DoseSeries.futureVaccines(from: vac, in: context).count - 1)
-            if count == 0 {
-                deleteSingle(vac)
-            } else {
-                pendingVac = vac
-                pendingFutureCount = count
-                showingDeleteDialog = true
-            }
+            deleteSingle(vac)
         case let dew as Deworming:
             let count = max(0, DoseSeries.futureDewormings(from: dew, in: context).count - 1)
             if count == 0 {
@@ -250,18 +227,6 @@ private extension PetUpcomingEventsTab {
         clearPending()
     }
 
-    func deleteThisAndFutureVac() {
-        guard let vac = pendingVac else { return }
-        for v in DoseSeries.futureVaccines(from: vac, in: context) {
-            NotificationManager.shared.cancelNotification(id: v.id)
-            context.delete(v)
-        }
-        try? context.save()
-        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
-        viewModel.fetchEvents()
-        clearPending()
-    }
-
     func deleteThisAndFutureDew() {
         guard let dew = pendingDew else { return }
         for d in DoseSeries.futureDewormings(from: dew, in: context) {
@@ -276,7 +241,6 @@ private extension PetUpcomingEventsTab {
 
     func clearPending() {
         pendingFutureCount = 0
-        pendingVac = nil
         pendingDew = nil
         showingDeleteDialog = false
     }

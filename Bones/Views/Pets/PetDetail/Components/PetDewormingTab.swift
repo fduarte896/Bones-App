@@ -11,38 +11,17 @@ import SwiftData
 struct PetDewormingTab: View {
     @ObservedObject var viewModel: PetDetailViewModel
     @Environment(\.modelContext) private var context
-    
-    // Confirmación de borrado en serie
+
     @State private var pendingFutureCount = 0
     @State private var showingDeleteDialog = false
     @State private var pendingDelete: Deworming?
-    
-    // Confirmación de borrado de serie completa
+
     @State private var pendingSeriesItems: [Deworming] = []
     @State private var pendingSeriesCount: Int = 0
     @State private var showingSeriesDeleteDialog = false
-    
-    // Estado de expansión por serie (clave: baseName)
+
     @State private var expandedSeries: Set<String> = []
-    
-    // Estado de expansión por subsección dentro de cada serie (ahora incluye "overdue")
-    private struct SubsectionsState {
-        var next: Bool = true
-        var overdue: Bool = true
-        var future: Bool = true
-        var history: Bool = false
-    }
-    @State private var expandedSubsections: [String: SubsectionsState] = [:]
-    
-    // Año de referencia: el de la próxima dosis pendiente (más cercana en el futuro)
-    private var referenceYear: Int? {
-        let now = Date()
-        if let next = viewModel.dewormings.first(where: { $0.date >= now && !$0.isCompleted }) {
-            return Calendar.current.component(.year, from: next.date)
-        }
-        return nil
-    }
-    
+
     var body: some View {
         List {
             if viewModel.dewormings.isEmpty {
@@ -51,212 +30,72 @@ struct PetDewormingTab: View {
             } else {
                 ForEach(orderedSummaries) { summary in
                     Section {
-                        if expandedSeries.contains(summary.baseName) {
-                            let now = Date()
-                            let binding = bindingForSubsections(summary.baseName)
-                            
-                            // Próxima (si existe) — disclosure propio
-                            if let next = summary.nextPending {
-                                DisclosureGroup(isExpanded: binding.next) {
-                                    NavigationLink {
-                                        EventDetailView(event: next)
-                                    } label: {
-                                        DewormingDoseRow(
-                                            dew: next,
-                                            referenceYear: referenceYear,
-                                            allDewormings: summary.items
-                                        )
-                                    }
-                                    .swipeActions(edge: .leading) {
-                                        Button {
-                                            next.isCompleted.toggle()
-                                            NotificationManager.shared.cancelNotification(id: next.id)
-                                            try? context.save()
-                                            viewModel.fetchEvents()
-                                        } label: {
-                                            Label("Completar", systemImage: "checkmark")
-                                        }
-                                        .tint(.green)
-                                    }
-                                    .swipeActions(edge: .trailing) {
-                                        Button(role: .destructive) {
-                                            startDelete(for: next)
-                                        } label: {
-                                            Label("Borrar", systemImage: "trash")
-                                        }
-                                    }
-                                } label: {
-                                    Text("Próxima")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            
-                            // Vencidas (pendientes < hoy), excluyendo la “Próxima” si ya es vencida
-                            let overduePending = summary.items.filter { dew in
-                                guard !dew.isCompleted, dew.date < now else { return false }
-                                if let next = summary.nextPending {
-                                    return dew.id != next.id
-                                }
-                                return true
-                            }
-                            if !overduePending.isEmpty {
-                                DisclosureGroup(isExpanded: binding.overdue) {
-                                    ForEach(overduePending.sorted(by: { $0.date < $1.date }), id: \.id) { dew in
-                                        NavigationLink {
-                                            EventDetailView(event: dew)
-                                        } label: {
-                                            DewormingDoseRow(
-                                                dew: dew,
-                                                referenceYear: referenceYear,
-                                                allDewormings: summary.items
-                                            )
-                                        }
-                                        .swipeActions(edge: .leading) {
-                                            Button {
-                                                dew.isCompleted.toggle()
-                                                NotificationManager.shared.cancelNotification(id: dew.id)
-                                                try? context.save()
-                                                viewModel.fetchEvents()
-                                            } label: {
-                                                Label("Completar", systemImage: "checkmark")
-                                            }
-                                            .tint(.green)
-                                        }
-                                        .swipeActions(edge: .trailing) {
-                                            Button(role: .destructive) {
-                                                startDelete(for: dew)
-                                            } label: {
-                                                Label("Borrar", systemImage: "trash")
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    Text("Vencidas")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            
-                            // Dosis futuras (pendientes > hoy), excluyendo la "Próxima"
-                            let futurePending = summary.items.filter { dew in
-                                guard !dew.isCompleted, dew.date > now else { return false }
-                                if let next = summary.nextPending {
-                                    return dew.id != next.id
-                                }
-                                return true
-                            }
-                            
-                            if !futurePending.isEmpty {
-                                DisclosureGroup(isExpanded: binding.future) {
-                                    ForEach(futurePending.sorted(by: { $0.date < $1.date }), id: \.id) { dew in
-                                        NavigationLink {
-                                            EventDetailView(event: dew)
-                                        } label: {
-                                            DewormingDoseRow(
-                                                dew: dew,
-                                                referenceYear: referenceYear,
-                                                allDewormings: summary.items
-                                            )
-                                        }
-                                        .swipeActions(edge: .leading) {
-                                            Button {
-                                                dew.isCompleted.toggle()
-                                                NotificationManager.shared.cancelNotification(id: dew.id)
-                                                try? context.save()
-                                                viewModel.fetchEvents()
-                                            } label: {
-                                                Label("Completar", systemImage: "checkmark")
-                                            }
-                                            .tint(.green)
-                                        }
-                                        .swipeActions(edge: .trailing) {
-                                            Button(role: .destructive) {
-                                                startDelete(for: dew)
-                                            } label: {
-                                                Label("Borrar", systemImage: "trash")
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    Text("Dosis futuras")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            
-                            // Historial (solo completadas)
-                            let history = summary.items.filter { $0.isCompleted }
-                            if !history.isEmpty {
-                                DisclosureGroup(isExpanded: binding.history) {
-                                    ForEach(history.sorted(by: { $0.date > $1.date }), id: \.id) { dew in
-                                        NavigationLink {
-                                            EventDetailView(event: dew)
-                                        } label: {
-                                            DewormingDoseRow(
-                                                dew: dew,
-                                                referenceYear: referenceYear,
-                                                allDewormings: summary.items
-                                            )
-                                        }
-                                        .swipeActions(edge: .leading) {
-                                            Button {
-                                                dew.isCompleted.toggle()
-                                                NotificationManager.shared.cancelNotification(id: dew.id)
-                                                try? context.save()
-                                                viewModel.fetchEvents()
-                                            } label: {
-                                                Label("Completar", systemImage: "checkmark")
-                                            }
-                                            .tint(.green)
-                                        }
-                                        .swipeActions(edge: .trailing) {
-                                            Button(role: .destructive) {
-                                                startDelete(for: dew)
-                                            } label: {
-                                                Label("Borrar", systemImage: "trash")
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    Text("Historial")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    } header: {
-                        // Header “tappable” que actúa como el label del DisclosureGroup de la serie
                         HStack(spacing: 12) {
                             Button {
-                                if expandedSeries.contains(summary.baseName) {
-                                    expandedSeries.remove(summary.baseName)
-                                } else {
-                                    expandedSeries.insert(summary.baseName)
-                                    // Inicializa estado de subsecciones si no existe
-                                    ensureSubsectionsState(for: summary)
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                                    if expandedSeries.contains(summary.baseName) {
+                                        expandedSeries.remove(summary.baseName)
+                                    } else {
+                                        expandedSeries.insert(summary.baseName)
+                                    }
                                 }
                             } label: {
-                                DewormingSeriesRow(summary: summary)
-                                    .contentShape(Rectangle())
+                                DewormingSeriesRow(
+                                    summary: summary,
+                                    expanded: expandedSeries.contains(summary.baseName)
+                                )
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            
-                            Spacer(minLength: 0)
-                            
-                            Button {
-                                startDeleteSeries(summary)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .foregroundStyle(.red)
+
+                            Button { startDeleteSeries(summary) } label: {
+                                Image(systemName: "trash").foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Eliminar serie")
+                        }
+                        .listRowSeparatorTint(Color.bonesRule)
+
+                        if expandedSeries.contains(summary.baseName) {
+                            ForEach(summary.items.sorted(by: { $0.date < $1.date }), id: \.id) { dew in
+                                NavigationLink {
+                                    EventDetailView(event: dew)
+                                } label: {
+                                    DewormingDoseRow(
+                                        dew: dew,
+                                        isNext: dew.id == summary.nextPending?.id,
+                                        allDewormings: summary.items
+                                    )
+                                }
+                                .swipeActions(edge: .leading) {
+                                    Button {
+                                        dew.isCompleted.toggle()
+                                        NotificationManager.shared.cancelNotification(id: dew.id)
+                                        try? context.save()
+                                        viewModel.fetchEvents()
+                                    } label: {
+                                        Label("Completar", systemImage: "checkmark")
+                                    }
+                                    .tint(.green)
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        startDelete(for: dew)
+                                    } label: {
+                                        Label("Borrar", systemImage: "trash")
+                                    }
+                                }
+                                .listRowSeparatorTint(Color.bonesRule)
+                            }
                         }
                     }
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(12)
+        .scrollContentBackground(.hidden)
+        .background(Color.bonesBg)
         .onAppear {
             viewModel.fetchEvents()
             autoExpandCriticalSeries()
@@ -266,7 +105,7 @@ struct PetDewormingTab: View {
             autoExpandCriticalSeries()
         }
         .confirmationDialog(
-            "¿Eliminar también futuras dosis?",
+            "¿Eliminar también dosis futuras?",
             isPresented: $showingDeleteDialog,
             titleVisibility: .visible
         ) {
@@ -285,7 +124,7 @@ struct PetDewormingTab: View {
             Button("Cancelar", role: .cancel) { clearPending() }
         } message: {
             if pendingFutureCount > 0 {
-                Text("Se encontraron \(pendingFutureCount) dosis futuras relacionadas. ¿Deseas borrarlas también?")
+                Text("Se encontraron \(pendingFutureCount) dosis futuras relacionadas. ¿Quieres borrarlas también?")
             } else {
                 Text("Esta acción no se puede deshacer.")
             }
@@ -303,15 +142,12 @@ struct PetDewormingTab: View {
             Text("Se eliminarán todas las dosis de esta serie. Esta acción no se puede deshacer.")
         }
     }
-    
-    // Orden: atrasadas primero, luego por próxima más cercana, luego alfabético
+
     private var orderedSummaries: [PetDetailViewModel.DewormingSeriesSummary] {
         let now = Date()
         func priority(_ s: PetDetailViewModel.DewormingSeriesSummary) -> (Int, Date?, String) {
             let isOverdue = (s.nextPending?.date ?? now) < now && s.nextPending != nil
-            let p0 = isOverdue ? 0 : 1
-            let p1 = s.nextPending?.date
-            return (p0, p1, s.baseName.lowercased())
+            return (isOverdue ? 0 : 1, s.nextPending?.date, s.baseName.lowercased())
         }
         return viewModel.dewormingSeriesSummaries.sorted { a, b in
             let pa = priority(a), pb = priority(b)
@@ -320,267 +156,245 @@ struct PetDewormingTab: View {
             return pa.2 < pb.2
         }
     }
-    
+
     private func autoExpandCriticalSeries() {
         let now = Date()
         let soon = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
-        var toExpand: Set<String> = expandedSeries
         for s in viewModel.dewormingSeriesSummaries {
-            var shouldExpand = false
-            if let next = s.nextPending?.date {
-                if next < now || next <= soon {
-                    shouldExpand = true
-                }
-            }
             let hasOverdue = s.items.contains { !$0.isCompleted && $0.date < now }
-            if shouldExpand || hasOverdue {
-                toExpand.insert(s.baseName)
-                // Asegura estado por defecto de subsecciones:
-                if expandedSubsections[s.baseName] == nil {
-                    expandedSubsections[s.baseName] = SubsectionsState(next: true, overdue: true, future: true, history: false)
-                } else if hasOverdue {
-                    expandedSubsections[s.baseName]?.overdue = true
-                }
+            let nextSoon = s.nextPending.map { $0.date <= soon } ?? false
+            if hasOverdue || nextSoon {
+                expandedSeries.insert(s.baseName)
             }
         }
-        expandedSeries = toExpand
-    }
-    
-    // MARK: - Subsections state helpers
-    private func ensureSubsectionsState(for summary: PetDetailViewModel.DewormingSeriesSummary) {
-        if expandedSubsections[summary.baseName] == nil {
-            // Defaults: próxima, vencidas y futuras abiertas; historial cerrado
-            expandedSubsections[summary.baseName] = SubsectionsState(next: true, overdue: true, future: true, history: false)
-        }
-    }
-    
-    private func bindingForSubsections(_ baseName: String) -> (next: Binding<Bool>, overdue: Binding<Bool>, future: Binding<Bool>, history: Binding<Bool>) {
-        if expandedSubsections[baseName] == nil {
-            expandedSubsections[baseName] = SubsectionsState()
-        }
-        return (
-            Binding(
-                get: { expandedSubsections[baseName, default: SubsectionsState()].next },
-                set: { expandedSubsections[baseName, default: SubsectionsState()].next = $0 }
-            ),
-            Binding(
-                get: { expandedSubsections[baseName, default: SubsectionsState()].overdue },
-                set: { expandedSubsections[baseName, default: SubsectionsState()].overdue = $0 }
-            ),
-            Binding(
-                get: { expandedSubsections[baseName, default: SubsectionsState()].future },
-                set: { expandedSubsections[baseName, default: SubsectionsState()].future = $0 }
-            ),
-            Binding(
-                get: { expandedSubsections[baseName, default: SubsectionsState()].history },
-                set: { expandedSubsections[baseName, default: SubsectionsState()].history = $0 }
-            )
-        )
     }
 }
 
-// MARK: - Fila de dosis de desparasitación
-private struct DewormingDoseRow: View {
-    @Bindable var dew: Deworming
-    var referenceYear: Int?
-    var allDewormings: [Deworming]
-    
+// MARK: - Dose timeline
+
+private struct DewormingDoseTimeline: View {
+    let items: [Deworming]
+    let nextPendingID: UUID?
+    private let maxVisible = 8
+
+    private var sorted: [Deworming] { items.sorted { $0.date < $1.date } }
+    private var visible: [Deworming] { Array(sorted.prefix(maxVisible)) }
+    private var overflow: Int { max(0, items.count - maxVisible) }
+
     var body: some View {
-        let numbers = DoseSeries.parseDoseNumbers(from: dew.notes ?? "")
-        
-        // ¿Está vencida esta dosis? (pendiente y en el pasado)
+        HStack(spacing: 0) {
+            ForEach(Array(visible.enumerated()), id: \.offset) { idx, dew in
+                if idx > 0 {
+                    let before = visible[idx - 1]
+                    let color: Color = before.isCompleted ? Color.bonesOk.opacity(0.35)
+                        : (!before.isCompleted && before.date < Date()) ? Color.bonesOverdue.opacity(0.25)
+                        : Color.bonesRule
+                    Rectangle().fill(color).frame(width: 16, height: 2)
+                }
+                DewormingDot(dew: dew, isNext: dew.id == nextPendingID)
+            }
+            if overflow > 0 {
+                Rectangle().fill(Color.bonesRule).frame(width: 12, height: 2)
+                Text("+\(overflow)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.bonesInkFaint)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.bonesRule))
+            }
+        }
+    }
+}
+
+private struct DewormingDot: View {
+    let dew: Deworming
+    let isNext: Bool
+
+    var body: some View {
         let isOverdue = !dew.isCompleted && dew.date < Date()
-        
-        // Regla de presentación para la línea de dosis:
-        // - Primera (0 o 1): "Primera dosis"
-        // - Si hay números: "Dosis X/Y"
-        // - Si no hay números: no muestra subtítulo, salvo que esté vencida → "Vencida"
-        let baseDoseLabel: String? = {
+        ZStack {
+            if dew.isCompleted {
+                Circle().fill(Color.bonesOk)
+            } else if isOverdue {
+                Circle().fill(Color.bonesOverdue)
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 7, weight: .black))
+                    .foregroundStyle(.white)
+            } else if isNext {
+                Circle().fill(Color.bonesDeworming)
+                Circle().strokeBorder(Color.bonesDeworming.opacity(0.3), lineWidth: 3)
+                    .padding(-3)
+            } else {
+                Circle().strokeBorder(Color.bonesInkFaint, lineWidth: 1.5)
+                    .background(Circle().fill(Color.bonesBg))
+            }
+        }
+        .frame(width: 16, height: 16)
+    }
+}
+
+// MARK: - Series row (card header)
+
+private struct DewormingSeriesRow: View {
+    let summary: PetDetailViewModel.DewormingSeriesSummary
+    let expanded: Bool
+
+    private var seriesStatus: HealthStatus {
+        let now = Date()
+        if summary.items.contains(where: { !$0.isCompleted && $0.date < now }) { return .overdue }
+        if let next = summary.nextPending?.date,
+           next.timeIntervalSince(now) < 7 * 24 * 3600 { return .soon }
+        return .ok
+    }
+
+    private var seriesStatusLabel: String {
+        switch seriesStatus {
+        case .overdue:
+            if let days = summary.overdueDays { return "Hace \(days) d" }
+            return "Vencida"
+        case .soon:
+            if let next = summary.nextPending?.date { return bonesRelativeLabel(for: next) }
+            return "Próxima"
+        case .ok:
+            if let next = summary.nextPending?.date { return bonesShortDate(next) }
+            return "Al día"
+        }
+    }
+
+    private var nextText: String {
+        guard let next = summary.nextPending else { return "Sin próxima" }
+        if let days = summary.overdueDays, days > 0, next.date < Date() {
+            return "Hace \(days) d"
+        }
+        return bonesShortDate(next.date)
+    }
+
+    private var lastText: String {
+        summary.lastCompleted.map { bonesShortDate($0.date) } ?? "—"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(summary.baseName)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.bonesInk)
+                StatusPill(status: seriesStatus, label: seriesStatusLabel)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.bonesInkFaint)
+                    .rotationEffect(expanded ? .degrees(180) : .zero)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.82), value: expanded)
+            }
+
+            DewormingDoseTimeline(
+                items: summary.items,
+                nextPendingID: summary.nextPending?.id
+            )
+
+            HStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Siguiente")
+                        .font(.caption2).foregroundStyle(Color.bonesInkFaint)
+                    Text(nextText)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(seriesStatus == .overdue ? Color.bonesOverdue : Color.bonesInk)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Última")
+                        .font(.caption2).foregroundStyle(Color.bonesInkFaint)
+                    Text(lastText)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.bonesInkSoft)
+                }
+
+                Spacer()
+
+                let completed = summary.items.filter(\.isCompleted).count
+                let total = summary.items.count
+                Text("\(completed)/\(total)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color.bonesInkSoft)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.bonesRuleSoft))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Dose row (expanded list)
+
+private struct DewormingDoseRow: View {
+    let dew: Deworming
+    let isNext: Bool
+    var allDewormings: [Deworming]
+
+    var body: some View {
+        let isOverdue = !dew.isCompleted && dew.date < Date()
+        let numbers = DoseSeries.parseDoseNumbers(from: dew.notes ?? "")
+
+        let primaryLabel: String = {
             if let cur = numbers.current {
                 if let tot = numbers.total { return "Dosis \(cur)/\(tot)" }
                 return "Dosis \(cur)"
             }
-            return nil
+            let raw = (dew.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if raw.isEmpty { return "Desparasitación" }
+            let base = DoseSeries.splitDoseBase(from: raw)
+            return base.prefix(1).uppercased() + base.dropFirst()
         }()
-        let doseLabelToShow: String? = {
-            if let label = baseDoseLabel {
-                return isOverdue ? "\(label) (Vencida)" : "\(label)"
-            } else {
-                return isOverdue ? "Vencida" : nil
-            }
-        }()
-        
-        let dewYear = Calendar.current.component(.year, from: dew.date)
-        let showYear: Bool = {
-            guard let ref = referenceYear else { return false }
-            return dewYear > ref
-        }()
-        
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(displayBase(from: dew.notes))
-                    .fontWeight(.semibold)
-                
-                if let doseLabelToShow {
-                    Text(doseLabelToShow)
-                        .font(.caption)
-                        .foregroundStyle(isOverdue ? .red : .secondary)
+
+        HStack(spacing: 12) {
+            Group {
+                if dew.isCompleted {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.bonesOk)
+                } else if isOverdue {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color.bonesOverdue)
+                } else if isNext {
+                    Image(systemName: "circle.fill").foregroundStyle(Color.bonesDeworming)
+                } else {
+                    Image(systemName: "circle").foregroundStyle(Color.bonesInkFaint)
                 }
-                
-                HStack(spacing: 4) {
-                    Text(dew.date, format: .dateTime.day().month().hour().minute())
-                    if showYear {
-                        Text("· \(dewYear)")
+            }
+            .font(.system(size: 20))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(primaryLabel)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(isOverdue ? Color.bonesOverdue : Color.bonesInk)
+                    if isOverdue {
+                        DewStatusTag(label: "Vencida", color: .bonesOverdue)
+                    } else if isNext {
+                        DewStatusTag(label: "Próxima", color: .bonesDeworming)
                     }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                Text(dew.date, format: .dateTime.day().month().year())
+                    .font(.caption2).foregroundStyle(Color.bonesInkFaint)
             }
+
             Spacer()
         }
-    }
-    
-    private func displayBase(from notes: String?) -> String {
-        let raw = (notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { return "Desparasitación" }
-        // Si las notas vienen con " (dosis X/Y)", usar solo el nombre base
-        let base = DoseSeries.splitDoseBase(from: raw)
-        // Capitaliza primera letra para mejor presentación
-        return base.prefix(1).uppercased() + base.dropFirst()
+        .padding(.vertical, 4)
     }
 }
 
-// MARK: - Fila de serie
-private struct DewormingSeriesRow: View {
-    let summary: PetDetailViewModel.DewormingSeriesSummary
-    
-    // Nuevo: detectar si hay dosis vencidas pendientes en la serie
-    private var hasOverdue: Bool {
-        let now = Date()
-        return summary.items.contains { !$0.isCompleted && $0.date < now }
-    }
-    
-    private var pendingCount: Int {
-        summary.items.filter { !$0.isCompleted }.count
-    }
-    
-    private var overdueCount: Int {
-        let now = Date()
-        return summary.items.filter { !$0.isCompleted && $0.date < now }.count
-    }
-    
-    private var completedCount: Int {
-        summary.items.filter { $0.isCompleted }.count
-    }
-    
-    private var statusText: String {
-        // Prioriza mostrar "Vencida" si hay pendientes en el pasado
-        if hasOverdue {
-            return "Vencida"
-        }
-        switch summary.status {
-        case .notStarted:
-            return "No iniciada"
-        case .completed:
-            return "Completada"
-        case .inProgress(let current, let total):
-            if let total {
-                return "En progreso (\(current)/\(total))"
-            } else {
-                return "En progreso"
-            }
-        case .recurring(let months, let next):
-            if let m = months, let d = next {
-                return "Recurrente cada \(m) m • \(d.formatted(date: .abbreviated, time: .omitted))"
-            } else if let m = months {
-                return "Recurrente cada \(m) m"
-            } else {
-                return "Recurrente"
-            }
-        }
-    }
-    
-    private var nextText: String {
-        if let next = summary.nextPending {
-            if let overdue = summary.overdueDays, overdue > 0, next.date < Date() {
-                return "Atrasada \(overdue) d"
-            } else {
-                return next.date.formatted(date: .abbreviated, time: .omitted)
-            }
-        } else {
-            return "Sin próxima"
-        }
-    }
-    
-    private var lastText: String {
-        if let last = summary.lastCompleted {
-            return last.date.formatted(date: .abbreviated, time: .omitted)
-        } else {
-            return "—"
-        }
-    }
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(summary.baseName)
-                    .fontWeight(.semibold)
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(hasOverdue ? .red : .secondary)
-                HStack(spacing: 6) {
-                    if pendingCount > 0 {
-                        SummaryChip(label: "Pendientes", value: "\(pendingCount)", tint: .blue)
-                    }
-                    if overdueCount > 0 {
-                        SummaryChip(label: "Vencidas", value: "\(overdueCount)", tint: .red)
-                    }
-                    if completedCount > 0 {
-                        SummaryChip(label: "Completadas", value: "\(completedCount)", tint: .green)
-                    }
-                }
-                HStack(spacing: 6) {
-                    SummaryChip(label: "Última", value: lastText, tint: .secondary)
-                    SummaryChip(label: "Próxima", value: nextText, tint: hasOverdue ? .red : .secondary)
-                }
-            }
-            Spacer()
-        }
-    }
-}
-
-private struct LabeledValue: View {
+private struct DewStatusTag: View {
     let label: String
-    let value: String
+    let color: Color
     var body: some View {
-        HStack(spacing: 4) {
-            Text(label + ":")
-            Text(value)
-                .fontWeight(.medium)
-        }
-    }
-}
-
-private struct SummaryChip: View {
-    let label: String
-    let value: String
-    let tint: Color
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(label)
-            Text(value)
-                .fontWeight(.semibold)
-        }
-        .font(.caption2)
-        .padding(.vertical, 2)
-        .padding(.horizontal, 6)
-        .background(Capsule().fill(tint.opacity(0.12)))
-        .foregroundStyle(tint)
+        Text(label)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.10)))
     }
 }
 
 // MARK: - Helpers de borrado en serie
+
 private extension PetDewormingTab {
     func startDelete(for dew: Deworming) {
         let count = max(0, DoseSeries.futureDewormings(from: dew, in: context).count - 1)
@@ -592,7 +406,7 @@ private extension PetDewormingTab {
             showingDeleteDialog = true
         }
     }
-    
+
     func deleteSingle(_ dew: Deworming) {
         NotificationManager.shared.cancelNotification(id: dew.id)
         context.delete(dew)
@@ -601,7 +415,7 @@ private extension PetDewormingTab {
         viewModel.fetchEvents()
         clearPending()
     }
-    
+
     func deleteThisAndFuture() {
         guard let dew = pendingDelete else { return }
         let all = DoseSeries.futureDewormings(from: dew, in: context)
@@ -614,20 +428,19 @@ private extension PetDewormingTab {
         viewModel.fetchEvents()
         clearPending()
     }
-    
+
     func clearPending() {
         pendingFutureCount = 0
         pendingDelete = nil
         showingDeleteDialog = false
     }
-    
-    // MARK: - Borrado de serie completa
+
     func startDeleteSeries(_ summary: PetDetailViewModel.DewormingSeriesSummary) {
         pendingSeriesItems = summary.items
         pendingSeriesCount = summary.items.count
         showingSeriesDeleteDialog = true
     }
-    
+
     func deleteSeries() {
         for dew in pendingSeriesItems {
             NotificationManager.shared.cancelNotification(id: dew.id)
@@ -638,7 +451,7 @@ private extension PetDewormingTab {
         viewModel.fetchEvents()
         clearSeriesPending()
     }
-    
+
     func clearSeriesPending() {
         pendingSeriesItems = []
         pendingSeriesCount = 0
@@ -646,7 +459,8 @@ private extension PetDewormingTab {
     }
 }
 
-// MARK: - Resumen de series de desparasitación (similar a Vacunas)
+// MARK: - Resumen de series de desparasitación
+
 private extension PetDetailViewModel {
     enum DewormingSeriesStatus: Equatable {
         case notStarted
@@ -654,65 +468,58 @@ private extension PetDetailViewModel {
         case completed
         case recurring(months: Int?, nextDate: Date?)
     }
-    
+
     struct DewormingSeriesSummary: Identifiable {
         let id = UUID()
         let baseName: String
-        let items: [Deworming]              // ordenadas por fecha asc
+        let items: [Deworming]
         let lastCompleted: Deworming?
         let nextPending: Deworming?
         let status: DewormingSeriesStatus
         let overdueDays: Int?
     }
-    
+
     var dewormingSeriesSummaries: [DewormingSeriesSummary] {
         let all = dewormings.sorted { $0.date < $1.date }
-        // Agrupación: seriesID > rrule > notas normalizadas
         let groups: [String: [Deworming]] = Dictionary(grouping: all) { d in
             if let sid = d.seriesID { return "sid:\(sid.uuidString)" }
             if let rule = d.rrule, !rule.isEmpty { return "rrule:\(rule)" }
             return "notes:\(DoseSeries.normalizeNotes(d.notes))"
         }
         let now = Date()
-        
+
         func daysBetween(_ from: Date, _ to: Date) -> Int {
             let comps = Calendar.current.dateComponents([.day], from: from, to: to)
             return abs(comps.day ?? 0)
         }
-        
+
         func displayBase(from notes: String?) -> String {
             let raw = (notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if raw.isEmpty { return "Desparasitación" }
             let base = DoseSeries.splitDoseBase(from: raw)
             return base.prefix(1).uppercased() + base.dropFirst()
         }
-        
+
         return groups.values.compactMap { arr in
             let items = arr.sorted { $0.date < $1.date }
             guard let first = items.first else { return nil }
             let baseName = displayBase(from: first.notes)
             let lastCompleted = items.filter { $0.isCompleted }.max(by: { $0.date < $1.date })
-            
-            // Pendientes futuras y vencidas
+
             let nextPendingFuture = items
                 .filter { !$0.isCompleted && $0.date >= now }
                 .min(by: { $0.date < $1.date })
             let pendingPast = items
                 .filter { !$0.isCompleted && $0.date < now }
-                .sorted { $0.date < $1.date } // ascendente: first = la más antigua vencida
-            
-            // Selección de “Próxima”:
-            // - Si hay vencidas → la más antigua vencida (first)
-            // - Si no hay vencidas → la futura más cercana
+                .sorted { $0.date < $1.date }
+
             let selectedNext: Deworming? = pendingPast.first ?? nextPendingFuture
-            
-            // OverdueDays coherente con la “Próxima” cuando sea vencida
+
             let overdueDays: Int? = {
                 guard let next = selectedNext, next.date < now else { return nil }
                 return daysBetween(next.date, now)
             }()
-            
-            // Calcular X/Y si las notas traen "(dosis X/Y)"
+
             let totals = items.compactMap { DoseSeries.parseDoseNumbers(from: $0.notes ?? "").total }
             let totalExpected = totals.max()
             let completedCountByLabel = items
@@ -721,13 +528,12 @@ private extension PetDetailViewModel {
                 .max() ?? 0
             let completedCountFallback = items.filter { $0.isCompleted }.count
             let completedCount = max(completedCountByLabel, completedCountFallback)
-            
-            // Detectar periodicidad mensual aproximada (3 o 6 meses)
+
             var recurringMonths: Int? = nil
             if items.count >= 2 {
                 let sorted = items.sorted { $0.date < $1.date }
                 for i in 1..<sorted.count {
-                    let interval = sorted[i].date.timeIntervalSince(sorted[i-1].date) / (24*3600)
+                    let interval = sorted[i].date.timeIntervalSince(sorted[i-1].date) / (24 * 3600)
                     let months = Int((interval / 30.0).rounded())
                     if [3, 6].contains(months) {
                         recurringMonths = months
@@ -735,7 +541,7 @@ private extension PetDetailViewModel {
                     }
                 }
             }
-            
+
             let status: DewormingSeriesStatus = {
                 if let total = totalExpected, completedCount >= total, recurringMonths == nil {
                     return .completed
@@ -747,18 +553,14 @@ private extension PetDetailViewModel {
                         return .inProgress(current: max(1, completedCount + 1), total: totalExpected)
                     }
                 }
-                if completedCount == 0 {
-                    return .notStarted
-                }
+                if completedCount == 0 { return .notStarted }
                 if let total = totalExpected, completedCount < total {
                     return .inProgress(current: max(1, completedCount + 1), total: total)
                 }
-                if let m = recurringMonths {
-                    return .recurring(months: m, nextDate: nil)
-                }
+                if let m = recurringMonths { return .recurring(months: m, nextDate: nil) }
                 return .completed
             }()
-            
+
             return DewormingSeriesSummary(
                 baseName: baseName,
                 items: items,
@@ -768,7 +570,6 @@ private extension PetDetailViewModel {
                 overdueDays: overdueDays
             )
         }
-        // Orden alfabético por baseName por defecto; el orden final lo hace orderedSummaries
         .sorted { $0.baseName.lowercased() < $1.baseName.lowercased() }
     }
 }
@@ -789,7 +590,6 @@ private extension PetDetailViewModel {
         .modelContainer(container)
 }
 
-// Nuevo preview: mismo dataset pero confiando en autoExpand para abrir series relevantes
 #Preview("Desparasitación – Expandido (auto)") {
     let container = DewPreviewData.makeContainer()
     let pet = DewPreviewData.seedCommonColombia(in: container)
@@ -797,17 +597,16 @@ private extension PetDetailViewModel {
         .modelContainer(container)
 }
 
-// Host que crea el VM y le inyecta el context del entorno
 private struct PetDewormingTabPreviewHost: View {
     let pet: Pet
     @Environment(\.modelContext) private var context
     @StateObject private var vm: PetDetailViewModel
-    
+
     init(pet: Pet) {
         self.pet = pet
         _vm = StateObject(wrappedValue: PetDetailViewModel(petID: pet.id))
     }
-    
+
     var body: some View {
         PetDewormingTab(viewModel: vm)
             .onAppear {
@@ -816,20 +615,13 @@ private struct PetDewormingTabPreviewHost: View {
     }
 }
 
-// Datos de ejemplo para previews
 private enum DewPreviewData {
     static func makeContainer() -> ModelContainer {
-        let schema = Schema([
-            Pet.self,
-            Vaccine.self,
-            Deworming.self,
-            WeightEntry.self
-        ])
+        let schema = Schema([Pet.self, Vaccine.self, Deworming.self, WeightEntry.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: config)
     }
 
-    // Pet sin desparasitaciones
     @discardableResult
     static func emptyPet(in container: ModelContainer) -> Pet {
         let ctx = ModelContext(container)
@@ -838,115 +630,72 @@ private enum DewPreviewData {
         try? ctx.save()
         return pet
     }
-    
-    // Pet con desparasitantes comunes en Colombia y esquemas típicos
+
     @discardableResult
     static func seedCommonColombia(in container: ModelContainer) -> Pet {
         let ctx = ModelContext(container)
         let pet = Pet(name: "Loki", species: .perro, breed: "Husky", sex: .male)
         ctx.insert(pet)
-        
+
         let cal = Calendar.current
         let now = Date()
-        
-        // 1) Drontal Plus — hoy + 15 días (serie 2/2), luego refuerzo a 3 meses
+
         let seriesDrontal = UUID()
-        let dr1 = Deworming(date: now, pet: pet,
-                            notes: "Drontal Plus (dosis 1/2)",
-                            prescriptionImageData: nil,
-                            seriesID: seriesDrontal)
+        let dr1 = Deworming(date: now, pet: pet, notes: "Drontal Plus (dosis 1/2)",
+                            prescriptionImageData: nil, seriesID: seriesDrontal)
         let dr2 = Deworming(date: cal.date(byAdding: .day, value: 15, to: now)!,
-                            pet: pet,
-                            notes: "Drontal Plus (dosis 2/2)",
-                            prescriptionImageData: nil,
-                            seriesID: seriesDrontal)
+                            pet: pet, notes: "Drontal Plus (dosis 2/2)",
+                            prescriptionImageData: nil, seriesID: seriesDrontal)
         let drBooster = Deworming(date: cal.date(byAdding: .month, value: 3, to: now)!,
-                                  pet: pet,
-                                  notes: "Drontal Plus",
-                                  prescriptionImageData: nil,
-                                  seriesID: seriesDrontal)
-        // Marca la primera como completada si quieres ver “Última” poblada
+                                  pet: pet, notes: "Drontal Plus",
+                                  prescriptionImageData: nil, seriesID: seriesDrontal)
         dr1.isCompleted = true
-        
-        // 2) Endogard — hoy + 15 días, luego cada 3 meses
+
         let seriesEndogard = UUID()
-        let en1 = Deworming(date: cal.date(byAdding: .day, value: -10, to: now)!, // pasada
-                            pet: pet,
-                            notes: "Endogard (dosis 1/2)",
-                            prescriptionImageData: nil,
-                            seriesID: seriesEndogard)
-        en1.isCompleted = false // ← dejamos una vencida para visualizar el estado “Atrasada”
+        let en1 = Deworming(date: cal.date(byAdding: .day, value: -10, to: now)!,
+                            pet: pet, notes: "Endogard (dosis 1/2)",
+                            prescriptionImageData: nil, seriesID: seriesEndogard)
         let en2 = Deworming(date: cal.date(byAdding: .day, value: 5, to: now)!,
-                            pet: pet,
-                            notes: "Endogard (dosis 2/2)",
-                            prescriptionImageData: nil,
-                            seriesID: seriesEndogard)
+                            pet: pet, notes: "Endogard (dosis 2/2)",
+                            prescriptionImageData: nil, seriesID: seriesEndogard)
         let enBooster = Deworming(date: cal.date(byAdding: .month, value: 3, to: now)!,
-                                  pet: pet,
-                                  notes: "Endogard",
-                                  prescriptionImageData: nil,
-                                  seriesID: seriesEndogard)
-        
-        // 3) Panacur (fenbendazol) — 3 días seguidos y repetir el ciclo a los 14 días
+                                  pet: pet, notes: "Endogard",
+                                  prescriptionImageData: nil, seriesID: seriesEndogard)
+
         let seriesPanacur = UUID()
         let p1 = Deworming(date: cal.date(byAdding: .day, value: -1, to: now)!,
-                           pet: pet,
-                           notes: "Panacur (dosis 1/3)",
-                           prescriptionImageData: nil,
-                           seriesID: seriesPanacur)
-        let p2 = Deworming(date: now,
-                           pet: pet,
-                           notes: "Panacur (dosis 2/3)",
-                           prescriptionImageData: nil,
-                           seriesID: seriesPanacur)
+                           pet: pet, notes: "Panacur (dosis 1/3)",
+                           prescriptionImageData: nil, seriesID: seriesPanacur)
+        let p2 = Deworming(date: now, pet: pet, notes: "Panacur (dosis 2/3)",
+                           prescriptionImageData: nil, seriesID: seriesPanacur)
         let p3 = Deworming(date: cal.date(byAdding: .day, value: 1, to: now)!,
-                           pet: pet,
-                           notes: "Panacur (dosis 3/3)",
-                           prescriptionImageData: nil,
-                           seriesID: seriesPanacur)
-        // Repetición del ciclo a 14 días
+                           pet: pet, notes: "Panacur (dosis 3/3)",
+                           prescriptionImageData: nil, seriesID: seriesPanacur)
         let pR1 = Deworming(date: cal.date(byAdding: .day, value: 14, to: now)!,
-                            pet: pet,
-                            notes: "Panacur (dosis 1/3)",
-                            prescriptionImageData: nil,
-                            seriesID: seriesPanacur)
+                            pet: pet, notes: "Panacur (dosis 1/3)",
+                            prescriptionImageData: nil, seriesID: seriesPanacur)
         let pR2 = Deworming(date: cal.date(byAdding: .day, value: 15, to: now)!,
-                            pet: pet,
-                            notes: "Panacur (dosis 2/3)",
-                            prescriptionImageData: nil,
-                            seriesID: seriesPanacur)
+                            pet: pet, notes: "Panacur (dosis 2/3)",
+                            prescriptionImageData: nil, seriesID: seriesPanacur)
         let pR3 = Deworming(date: cal.date(byAdding: .day, value: 16, to: now)!,
-                            pet: pet,
-                            notes: "Panacur (dosis 3/3)",
-                            prescriptionImageData: nil,
-                            seriesID: seriesPanacur)
+                            pet: pet, notes: "Panacur (dosis 3/3)",
+                            prescriptionImageData: nil, seriesID: seriesPanacur)
         p1.isCompleted = true
-        
-        // 4) Milbemax — hoy y repetir cada 6 meses
+
         let seriesMilbemax = UUID()
         let mi1 = Deworming(date: cal.date(byAdding: .day, value: -30, to: now)!,
-                            pet: pet,
-                            notes: "Milbemax",
-                            prescriptionImageData: nil,
-                            seriesID: seriesMilbemax)
+                            pet: pet, notes: "Milbemax",
+                            prescriptionImageData: nil, seriesID: seriesMilbemax)
         mi1.isCompleted = true
-        let mi2 = Deworming(date: now,
-                            pet: pet,
-                            notes: "Milbemax",
-                            prescriptionImageData: nil,
-                            seriesID: seriesMilbemax)
+        let mi2 = Deworming(date: now, pet: pet, notes: "Milbemax",
+                            prescriptionImageData: nil, seriesID: seriesMilbemax)
         let miNext = Deworming(date: cal.date(byAdding: .month, value: 6, to: now)!,
-                               pet: pet,
-                               notes: "Milbemax",
-                               prescriptionImageData: nil,
-                               seriesID: seriesMilbemax)
-        
-        // Insertar
-        [dr1, dr2, drBooster,
-         en1, en2, enBooster,
-         p1, p2, p3, pR1, pR2, pR3,
-         mi1, mi2, miNext].forEach { ctx.insert($0) }
-        
+                               pet: pet, notes: "Milbemax",
+                               prescriptionImageData: nil, seriesID: seriesMilbemax)
+
+        [dr1, dr2, drBooster, en1, en2, enBooster,
+         p1, p2, p3, pR1, pR2, pR3, mi1, mi2, miNext].forEach { ctx.insert($0) }
+
         try? ctx.save()
         return pet
     }

@@ -3,12 +3,17 @@ import SwiftData
 
 struct VaccineDetailView: View {
     @Bindable var vac: Vaccine
-    var onDelete: () -> Void
     @Environment(\.modelContext) private var context
 
     var body: some View {
         Form {
-            EventDetailHeader(pet: vac.pet, title: vac.vaccineName, icon: "syringe", isCompleted: vac.isCompleted, date: vac.date)
+            EventDetailHeader(
+                pet: vac.pet,
+                title: DoseSeries.splitDoseBase(from: vac.vaccineName),
+                accentColor: .bonesVaccine,
+                isCompleted: vac.isCompleted,
+                date: vac.date
+            )
 
             Section("Información") {
                 TextField("Nombre", text: $vac.vaccineName)
@@ -30,10 +35,6 @@ struct VaccineDetailView: View {
 
             PrescriptionSection(imageData: $vac.prescriptionImageData) {
                 propagatePrescriptionForVaccine(vac, with: vac.prescriptionImageData, in: context)
-            }
-
-            Section {
-                Button("Eliminar evento", role: .destructive, action: onDelete)
             }
         }
     }

@@ -3,15 +3,14 @@ import SwiftData
 
 struct DewormingDetailView: View {
     @Bindable var dew: Deworming
-    var onDelete: () -> Void
     @Environment(\.modelContext) private var context
 
     var body: some View {
         Form {
             EventDetailHeader(
                 pet: dew.pet,
-                title: dew.notes?.isEmpty == false ? dew.notes! : "Desparasitación",
-                icon: "ladybug.fill",
+                title: (dew.notes ?? "").isEmpty ? "Desparasitación" : dew.notes!,
+                accentColor: .bonesDeworming,
                 isCompleted: dew.isCompleted,
                 date: dew.date
             )
@@ -29,10 +28,6 @@ struct DewormingDetailView: View {
 
             PrescriptionSection(imageData: $dew.prescriptionImageData) {
                 propagatePrescriptionForDeworming(dew, with: dew.prescriptionImageData, in: context)
-            }
-
-            Section {
-                Button("Eliminar evento", role: .destructive, action: onDelete)
             }
         }
     }

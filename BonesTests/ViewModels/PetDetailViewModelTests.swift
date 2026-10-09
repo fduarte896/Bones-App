@@ -125,16 +125,4 @@ struct PetDetailViewModelTests {
         #expect(vac.completedAt != nil)
     }
 
-    // MARK: - vaccineSeriesSummaries
-
-    @Test func vaccineSeriesSummaries_groupsByBaseName() throws {
-        context.insert(Vaccine(date: makeDate(day: 1), pet: pet, vaccineName: "Rabia (dosis 1/3)"))
-        context.insert(Vaccine(date: makeDate(day: 22), pet: pet, vaccineName: "Rabia (dosis 2/3)"))
-        try context.save()
-
-        let summaries = vm.vaccineSeriesSummaries
-        #expect(summaries.count == 1)
-        #expect(summaries.first?.baseName == "Rabia")
-        #expect(summaries.first?.items.count == 2)
-    }
 }

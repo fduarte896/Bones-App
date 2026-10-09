@@ -3,15 +3,14 @@ import SwiftData
 
 struct WeightEntryDetailView: View {
     @Bindable var weight: WeightEntry
-    var onDelete: () -> Void
     @Environment(\.modelContext) private var context
 
     var body: some View {
         Form {
             EventDetailHeader(
                 pet: weight.pet,
-                title: String(format: "Peso: %.1f kg", weight.weightKg),
-                icon: "scalemass",
+                title: String(format: "%.1f kg", weight.weightKg),
+                accentColor: .bonesWeight,
                 isCompleted: true,
                 date: weight.date
             )
@@ -31,10 +30,6 @@ struct WeightEntryDetailView: View {
                 TextEditor(text: Binding($weight.notes, replacingNilWith: ""))
                     .frame(minHeight: 100)
                     .onChange(of: weight.notes) { _, _ in save() }
-            }
-
-            Section {
-                Button("Eliminar registro", role: .destructive, action: onDelete)
             }
         }
     }

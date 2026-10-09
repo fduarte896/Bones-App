@@ -93,37 +93,6 @@ struct DoseSeriesDataTests {
         context = try makeContext()
     }
 
-    @Test func isBooster_trueBeyondThreshold() throws {
-        let pet = makePet(in: context)
-        let v1 = Vaccine(date: makeDate(year: 2025, month: 1, day: 1), pet: pet, vaccineName: "Rabia (dosis 1/1)")
-        let v2 = Vaccine(date: makeDate(year: 2025, month: 12, day: 1), pet: pet, vaccineName: "Rabia")
-        context.insert(v1)
-        context.insert(v2)
-        try context.save()
-
-        #expect(DoseSeries.isBooster(v2, among: [v1, v2]) == true)
-    }
-
-    @Test func isBooster_falseBelowThreshold() throws {
-        let pet = makePet(in: context)
-        let v1 = Vaccine(date: makeDate(year: 2026, month: 1, day: 1), pet: pet, vaccineName: "Rabia (dosis 1/3)")
-        let v2 = Vaccine(date: makeDate(year: 2026, month: 1, day: 22), pet: pet, vaccineName: "Rabia (dosis 2/3)")
-        context.insert(v1)
-        context.insert(v2)
-        try context.save()
-
-        #expect(DoseSeries.isBooster(v2, among: [v1, v2]) == false)
-    }
-
-    @Test func isBooster_falseForFirst() throws {
-        let pet = makePet(in: context)
-        let v1 = Vaccine(date: makeDate(year: 2026, month: 1, day: 1), pet: pet, vaccineName: "Rabia (dosis 1/3)")
-        context.insert(v1)
-        try context.save()
-
-        #expect(DoseSeries.isBooster(v1, among: [v1]) == false)
-    }
-
     @Test func futureDewormings_matchesBySeriesID() throws {
         let pet = makePet(in: context)
         let seriesID = UUID()

@@ -210,46 +210,30 @@ struct EventsListView: View {
     
     // MARK: - Borrado con confirmación (a nivel padre)
     private func startDelete(for event: any BasicEvent) {
-        // Calcula futuras según el tipo
-        let count: Int
         switch event {
-        case let vac as Vaccine:
-            count = max(0, DoseSeries.futureVaccines(from: vac, in: context).count - 1)
+        case is Vaccine:
+            vm.delete(event)
         case let dew as Deworming:
-            count = max(0, DoseSeries.futureDewormings(from: dew, in: context).count - 1)
+            let count = max(0, DoseSeries.futureDewormings(from: dew, in: context).count - 1)
+            if count == 0 {
+                vm.delete(event)
+            } else {
+                pendingDeleteEvent = event
+                pendingFutureCount = count
+                showingDeleteDialog = true
+            }
         default:
-            // Otros tipos: borrar directo
             vm.delete(event)
-            return
-        }
-        
-        if count == 0 {
-            vm.delete(event)
-        } else {
-            pendingDeleteEvent = event
-            pendingFutureCount = count
-            showingDeleteDialog = true
         }
     }
-    
+
     private func deleteThisAndFuture() {
-        guard let e = pendingDeleteEvent else { return }
-        switch e {
-        case let vac as Vaccine:
-            for v in DoseSeries.futureVaccines(from: vac, in: context) {
-                NotificationManager.shared.cancelNotification(id: v.id)
-                context.delete(v)
-            }
-            try? context.save()
-        case let dew as Deworming:
-            for d in DoseSeries.futureDewormings(from: dew, in: context) {
-                NotificationManager.shared.cancelNotification(id: d.id)
-                context.delete(d)
-            }
-            try? context.save()
-        default:
-            break
+        guard let dew = pendingDeleteEvent as? Deworming else { clearPending(); return }
+        for d in DoseSeries.futureDewormings(from: dew, in: context) {
+            NotificationManager.shared.cancelNotification(id: d.id)
+            context.delete(d)
         }
+        try? context.save()
         NotificationCenter.default.post(name: .eventsDidChange, object: nil)
         vm.fetchAllEvents()
         clearPending()

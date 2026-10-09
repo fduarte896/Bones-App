@@ -17,11 +17,11 @@ struct EventDetailView: View {
         Group {
             switch event {
             case let vac as Vaccine:
-                VaccineDetailView(vac: vac) { startDelete(for: vac) }
+                VaccineDetailView(vac: vac)
             case let dew as Deworming:
-                DewormingDetailView(dew: dew) { startDelete(for: dew) }
+                DewormingDetailView(dew: dew)
             case let weight as WeightEntry:
-                WeightEntryDetailView(weight: weight) { deleteSingle(event: weight) }
+                WeightEntryDetailView(weight: weight)
             default:
                 Text("Tipo de evento no soportado.")
             }
@@ -31,6 +31,12 @@ struct EventDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(event.isCompleted ? "Desmarcar" : "Completar") { toggleCompleted() }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { triggerDelete() } label: {
+                    Image(systemName: "trash")
+                }
+                .tint(.bonesOverdue)
             }
         }
         .confirmationDialog("¿Eliminar también futuras dosis?", isPresented: $showingDeleteDialog, titleVisibility: .visible) {
@@ -74,9 +80,17 @@ private extension EventDetailView {
         dismiss()
     }
 
+    func triggerDelete() {
+        switch event {
+        case let vac as Vaccine:        startDelete(for: vac)
+        case let dew as Deworming:      startDelete(for: dew)
+        case let weight as WeightEntry: deleteSingle(event: weight)
+        default: break
+        }
+    }
+
     func startDelete(for vac: Vaccine) {
-        let count = max(0, DoseSeries.futureVaccines(from: vac, in: context).count - 1)
-        count == 0 ? deleteSingle(event: vac) : setPending(count)
+        deleteSingle(event: vac)
     }
 
     func startDelete(for dew: Deworming) {
@@ -90,19 +104,13 @@ private extension EventDetailView {
     }
 
     func deleteThisAndFuture() {
-        switch event {
-        case let vac as Vaccine:
-            DoseSeries.futureVaccines(from: vac, in: context).forEach {
-                NotificationManager.shared.cancelNotification(id: $0.id); context.delete($0)
-            }
-        case let dew as Deworming:
+        if let dew = event as? Deworming {
             DoseSeries.futureDewormings(from: dew, in: context).forEach {
                 NotificationManager.shared.cancelNotification(id: $0.id); context.delete($0)
             }
-        default: break
+            try? context.save()
+            NotificationCenter.default.post(name: .eventsDidChange, object: nil)
         }
-        try? context.save()
-        NotificationCenter.default.post(name: .eventsDidChange, object: nil)
         clearPending()
         dismiss()
     }

@@ -109,75 +109,10 @@ struct PetDetailView: View {
         VStack(spacing: 0) {
 
             // ---------- Cabecera ----------
-            HStack(alignment: .top, spacing: 16) {
-                ZStack(alignment: .bottomTrailing) {
-                    Group {
-                        if let data = pet.photoData,
-                           let img = UIImage(data: data) {
-                            Image(uiImage: img)
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            Image(systemName: "photo")
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundStyle(.secondary)
-                                .padding(20)
-                        }
-                    }
-                    .frame(width: 120, height: 120)
-                    .clipShape(Circle())
-                    .contentShape(Rectangle())
-
-                    PhotosPicker(selection: $selectedItem,
-                                 matching: .images,
-                                 photoLibrary: .shared()) {
-                        Image(systemName: "pencil.circle.fill")
-                            .font(.system(size: 26))
-                            .padding(4)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                    }
-                    .onLongPressGesture { showingRemoveAlert = true }
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(pet.name)
-                        .font(.title2).bold()
-                    HStack {
-                        Text(pet.sex.rawValue.capitalized)
-                        Text("|")
-                        if let age = ageString(for: pet.birthDate) {
-                            Text(age)
-                        }
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                    Text("\(pet.species.rawValue.capitalized) · \(pet.breed ?? "Sin raza")")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    if let color = pet.color, !color.isEmpty {
-                        Text("Color: \(color)")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                Spacer()
-            }
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 16)
+            petHeader
 
             // ---------- Picker de tabs ----------
-            HStack(spacing: 8) {
-                ForEach(DetailTab.allCases, id: \.self) { tab in
-                    tabButton(for: tab)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 6)
+            tabPicker
 
             // ---------- Contenido ----------
             Group {
@@ -194,6 +129,7 @@ struct PetDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(Color.bonesBg.ignoresSafeArea())
         .onChange(of: selectedItem) { _, item in
             guard let item else { return }
             Task {
@@ -285,6 +221,70 @@ struct PetDetailView: View {
     }
 
     @ViewBuilder
+    private var petHeader: some View {
+        VStack(spacing: 10) {
+            ZStack(alignment: .bottomTrailing) {
+                if let data = pet.photoData, let img = UIImage(data: data) {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 88, height: 88)
+                        .clipShape(RoundedRectangle(cornerRadius: 22))
+                } else {
+                    Monogram(pet: pet, size: 88, radius: 22)
+                }
+                PhotosPicker(selection: $selectedItem,
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white)
+                        .background(Color.bonesInk.clipShape(Circle()))
+                        .offset(x: 4, y: 4)
+                }
+                .onLongPressGesture { showingRemoveAlert = true }
+            }
+
+            Text(pet.name)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.bonesInk)
+
+            // Meta chips row
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    PetMetaChip(text: pet.species.rawValue.capitalized, icon: "pawprint")
+                    if let breed = pet.breed, !breed.isEmpty {
+                        PetMetaChip(text: breed, icon: nil)
+                    }
+                    PetMetaChip(text: pet.sex.rawValue.capitalized, icon: nil)
+                    if let age = ageString(for: pet.birthDate) {
+                        PetMetaChip(text: age, icon: "birthday.cake")
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
+        .background(Color.bonesBg)
+    }
+
+    @ViewBuilder
+    private var tabPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(DetailTab.allCases, id: \.self) { tab in
+                tabButton(for: tab)
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.bonesInk))
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+        .background(Color.bonesBg)
+    }
+
+    @ViewBuilder
     private func tabButton(for tab: DetailTab) -> some View {
         Button {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.85, blendDuration: 0.2)) {
@@ -301,25 +301,20 @@ struct PetDetailView: View {
     private func tabButtonLabel(for tab: DetailTab) -> some View {
         let isSelected = selectedTab == tab
         Text(tab.title)
-            .font(.subheadline)
-            .minimumScaleFactor(0.85)
+            .font(.system(size: 13, weight: .medium))
+            .minimumScaleFactor(0.8)
             .lineLimit(1)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7)
             .frame(maxWidth: .infinity)
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
-            .background(tabBackground(isSelected: isSelected))
-    }
-
-    @ViewBuilder
-    private func tabBackground(isSelected: Bool) -> some View {
-        ZStack {
-            Capsule().fill(Color(.systemGray5))
-            if isSelected {
-                Capsule()
-                    .fill(Color.accentColor)
-                    .matchedGeometryEffect(id: "tabSelection", in: tabNamespace)
+            .foregroundStyle(isSelected ? Color.bonesInk : Color.white.opacity(0.6))
+            .background {
+                if isSelected {
+                    Capsule()
+                        .fill(Color.white)
+                        .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+                        .matchedGeometryEffect(id: "tabSelection", in: tabNamespace)
+                }
             }
-        }
     }
 
     private var shouldShowDemoGuideInDetail: Bool {
@@ -350,6 +345,26 @@ struct PetDetailView: View {
         let kind: EventKind
     }
     @State private var quickAddConfig: QuickAddConfig?
+}
+
+private struct PetMetaChip: View {
+    let text: String
+    let icon: String?
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(Capsule().fill(Color.bonesRule))
+        .foregroundStyle(Color.bonesInkSoft)
+    }
 }
 
 private extension PetDetailView {

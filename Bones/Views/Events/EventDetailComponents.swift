@@ -7,42 +7,69 @@ import PhotosUI
 struct EventDetailHeader: View {
     let pet: Pet?
     let title: String
-    let icon: String
+    let accentColor: Color
     let isCompleted: Bool
     let date: Date
 
+    private var statusHealth: HealthStatus {
+        if isCompleted { return .ok }
+        if date < Date() { return .overdue }
+        return .soon
+    }
+
+    private var statusLabel: String {
+        if isCompleted { return "Completado" }
+        if date < Date() { return "Vencido" }
+        return "Pendiente"
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            if let data = pet?.photoData, let ui = UIImage(data: data) {
-                Image(uiImage: ui)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
-                    .clipShape(Circle())
-            } else {
-                Circle()
-                    .fill(Color(.systemGray5))
-                    .frame(width: 56, height: 56)
-                    .overlay(Image(systemName: "pawprint"))
-                    .foregroundStyle(.secondary)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline)
-                HStack(spacing: 8) {
-                    Image(systemName: icon)
-                    Text(isCompleted ? "Completado" : "Pendiente")
-                        .foregroundStyle(isCompleted ? .green : .orange)
-                    Text(date, format: .dateTime.day().month().hour().minute())
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        HStack(alignment: .center, spacing: 14) {
+            petAvatar
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.bonesInk)
+                    .lineLimit(2)
                 if let pet {
-                    Text("🐾 \(pet.name)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(pet.name)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.bonesInkSoft)
                 }
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .font(.caption2)
+                        .foregroundStyle(accentColor)
+                    Text(bonesShortDate(date))
+                        .font(.caption)
+                        .foregroundStyle(Color.bonesInkSoft)
+                    Spacer()
+                    StatusPill(status: statusHealth, label: statusLabel)
+                }
+                .padding(.top, 2)
             }
-            Spacer()
+        }
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private var petAvatar: some View {
+        if let pet, let data = pet.photoData, let ui = UIImage(data: data) {
+            Image(uiImage: ui)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 54, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 13))
+        } else if let pet {
+            Monogram(pet: pet, size: 54, radius: 13)
+        } else {
+            RoundedRectangle(cornerRadius: 13)
+                .fill(Color.bonesRuleSoft)
+                .frame(width: 54, height: 54)
+                .overlay(
+                    Image(systemName: "pawprint.fill")
+                        .foregroundStyle(Color.bonesInkFaint)
+                )
         }
     }
 }

@@ -113,6 +113,8 @@ struct PetWeightTab: View {
                 */
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.bonesBg)
         .sheet(isPresented: $showingAdd) { addSheet }
         .onReceive(NotificationCenter.default.publisher(for: .eventsDidChange)) { _ in
             // Refresca gráfico/lista tras editar en el detalle
@@ -168,15 +170,12 @@ private extension PetWeightTab {
                         Text("Peso Actual")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        HStack{
+                        HStack(spacing: 8) {
                             Text(String(format: "%.1f kg", last.weightKg))
                                 .font(.title3.monospacedDigit())
                                 .fontWeight(.semibold)
-                            HStack(alignment: .firstTextBaseline) {
-                                Text("delta: \(viewModel.deltaDescription)")
-                                    .font(.footnote.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
+                            DeltaBadge(delta: viewModel.deltaDescription,
+                                       trend: viewModel.weightTrend)
                         }
                     }
                     Spacer()
@@ -235,7 +234,7 @@ private extension PetWeightTab {
         }
         .padding(.horizontal)
         .padding(.vertical, 12)
-        .background(Color(.systemBackground))
+        .background(Color.bonesBg)
     }
     
     var controls: some View {
